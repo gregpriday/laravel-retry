@@ -4,8 +4,6 @@ namespace GregPriday\LaravelRetry\Tests\Unit;
 
 use GregPriday\LaravelRetry\Tests\TestCase;
 use GuzzleHttp\Exception\ConnectException;
-use GuzzleHttp\Exception\ServerException;
-use GuzzleHttp\Psr7\Request;
 
 class RetryTest extends TestCase
 {
@@ -15,6 +13,7 @@ class RetryTest extends TestCase
 
         $result = $this->retry->run(function () use (&$counter) {
             $counter++;
+
             return 'success';
         });
 
@@ -97,6 +96,7 @@ class RetryTest extends TestCase
                 if ($counter < 2) {
                     throw new \Exception('Custom error pattern match');
                 }
+
                 return 'success';
             },
             ['/custom error pattern/i'],

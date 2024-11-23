@@ -10,9 +10,9 @@ class ExponentialBackoffStrategy implements RetryStrategy
     /**
      * Create a new exponential backoff strategy.
      *
-     * @param float $multiplier The multiplier for each subsequent retry
-     * @param int|null $maxDelay Maximum delay in seconds
-     * @param bool $withJitter Whether to add random jitter to delays
+     * @param  float  $multiplier  The multiplier for each subsequent retry
+     * @param  int|null  $maxDelay  Maximum delay in seconds
+     * @param  bool  $withJitter  Whether to add random jitter to delays
      */
     public function __construct(
         protected float $multiplier = 2.0,
@@ -23,8 +23,8 @@ class ExponentialBackoffStrategy implements RetryStrategy
     /**
      * Calculate the delay for the next retry attempt.
      *
-     * @param int $attempt Current attempt number (0-based)
-     * @param float $baseDelay Base delay in seconds
+     * @param  int  $attempt  Current attempt number (0-based)
+     * @param  float  $baseDelay  Base delay in seconds
      * @return int Delay in seconds
      */
     public function getDelay(int $attempt, float $baseDelay): int
@@ -46,7 +46,7 @@ class ExponentialBackoffStrategy implements RetryStrategy
     /**
      * Add random jitter to the delay.
      *
-     * @param float $delay Base delay value
+     * @param  float  $delay  Base delay value
      * @return float Delay with jitter
      */
     protected function addJitter(float $delay): float
@@ -58,10 +58,9 @@ class ExponentialBackoffStrategy implements RetryStrategy
     /**
      * Determine if another retry attempt should be made.
      *
-     * @param int $attempt Current attempt number (0-based)
-     * @param int $maxAttempts Maximum number of attempts allowed
-     * @param Throwable|null $lastException The last exception that occurred
-     * @return bool
+     * @param  int  $attempt  Current attempt number (0-based)
+     * @param  int  $maxAttempts  Maximum number of attempts allowed
+     * @param  Throwable|null  $lastException  The last exception that occurred
      */
     public function shouldRetry(int $attempt, int $maxAttempts, ?Throwable $lastException = null): bool
     {

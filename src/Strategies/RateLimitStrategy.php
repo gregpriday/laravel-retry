@@ -17,10 +17,10 @@ class RateLimitStrategy implements RetryStrategy
     /**
      * Create a new rate limit strategy.
      *
-     * @param RetryStrategy $innerStrategy The wrapped retry strategy
-     * @param int $maxAttempts Maximum attempts per time window
-     * @param int $timeWindow Time window in seconds
-     * @param string $storageKey Unique key for this rate limiter instance
+     * @param  RetryStrategy  $innerStrategy  The wrapped retry strategy
+     * @param  int  $maxAttempts  Maximum attempts per time window
+     * @param  int  $timeWindow  Time window in seconds
+     * @param  string  $storageKey  Unique key for this rate limiter instance
      */
     public function __construct(
         protected RetryStrategy $innerStrategy,
@@ -29,7 +29,7 @@ class RateLimitStrategy implements RetryStrategy
         protected string $storageKey = 'default'
     ) {
         // Initialize storage for this key if it doesn't exist
-        if (!isset(self::$attemptStorage[$this->storageKey])) {
+        if (! isset(self::$attemptStorage[$this->storageKey])) {
             self::$attemptStorage[$this->storageKey] = [];
         }
     }
@@ -37,8 +37,8 @@ class RateLimitStrategy implements RetryStrategy
     /**
      * Calculate the delay for the next retry attempt.
      *
-     * @param int $attempt Current attempt number (0-based)
-     * @param float $baseDelay Base delay in seconds
+     * @param  int  $attempt  Current attempt number (0-based)
+     * @param  float  $baseDelay  Base delay in seconds
      * @return int Delay in seconds
      */
     public function getDelay(int $attempt, float $baseDelay): int
@@ -60,14 +60,13 @@ class RateLimitStrategy implements RetryStrategy
     /**
      * Determine if another retry attempt should be made.
      *
-     * @param int $attempt Current attempt number (0-based)
-     * @param int $maxAttempts Maximum number of attempts allowed
-     * @param Throwable|null $lastException The last exception that occurred
-     * @return bool
+     * @param  int  $attempt  Current attempt number (0-based)
+     * @param  int  $maxAttempts  Maximum number of attempts allowed
+     * @param  Throwable|null  $lastException  The last exception that occurred
      */
     public function shouldRetry(int $attempt, int $maxAttempts, ?Throwable $lastException = null): bool
     {
-        if (!$this->innerStrategy->shouldRetry($attempt, $maxAttempts, $lastException)) {
+        if (! $this->innerStrategy->shouldRetry($attempt, $maxAttempts, $lastException)) {
             return false;
         }
 
@@ -77,6 +76,7 @@ class RateLimitStrategy implements RetryStrategy
         }
 
         $this->recordAttempt();
+
         return true;
     }
 
@@ -86,6 +86,7 @@ class RateLimitStrategy implements RetryStrategy
     protected function getCurrentRate(): int
     {
         $this->cleanupOldAttempts();
+
         return count($this->getAttempts());
     }
 
@@ -96,7 +97,7 @@ class RateLimitStrategy implements RetryStrategy
     {
         self::$attemptStorage[$this->storageKey][] = [
             'timestamp' => time(),
-            'window_end' => time() + $this->timeWindow
+            'window_end' => time() + $this->timeWindow,
         ];
     }
 
@@ -119,7 +120,7 @@ class RateLimitStrategy implements RetryStrategy
         self::$attemptStorage[$this->storageKey] = array_values(
             array_filter(
                 self::$attemptStorage[$this->storageKey] ?? [],
-                fn(array $attempt) => $attempt['window_end'] > $currentTime
+                fn (array $attempt) => $attempt['window_end'] > $currentTime
             )
         );
     }
@@ -145,7 +146,7 @@ class RateLimitStrategy implements RetryStrategy
         $currentTime = time();
         $nextReset = min(
             array_map(
-                fn(array $attempt) => $attempt['window_end'],
+                fn (array $attempt) => $attempt['window_end'],
                 $attempts
             )
         );
@@ -189,7 +190,7 @@ class RateLimitStrategy implements RetryStrategy
             'remaining' => $this->getRemainingAttempts(),
             'reset_in' => $this->getTimeUntilReset(),
             'current_rate' => $this->getCurrentRate(),
-            'storage_key' => $this->storageKey
+            'storage_key' => $this->storageKey,
         ];
     }
 }

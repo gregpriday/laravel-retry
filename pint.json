@@ -1,0 +1,13 @@
+{
+  "preset": "laravel",
+  "rules": {
+    "@PSR12": true
+  },
+  "formats": {
+    "php": {
+      "output": {
+        "format": "console"
+      }
+    }
+  }
+}

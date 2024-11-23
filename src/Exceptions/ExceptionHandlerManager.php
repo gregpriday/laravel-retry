@@ -46,6 +46,7 @@ class ExceptionHandlerManager
     public function addHandlerPath(string $path): self
     {
         $this->discovery->addPath($path);
+
         return $this;
     }
 
@@ -55,6 +56,7 @@ class ExceptionHandlerManager
     public function registerHandler(RetryableExceptionHandler $handler): self
     {
         $this->handlers[] = $handler;
+
         return $this;
     }
 
@@ -127,7 +129,7 @@ class ExceptionHandlerManager
     {
         $this->handlers = array_filter(
             $this->handlers,
-            fn (RetryableExceptionHandler $handler) => !($handler instanceof $handlerClass)
+            fn (RetryableExceptionHandler $handler) => ! ($handler instanceof $handlerClass)
         );
 
         return $this;
@@ -139,6 +141,7 @@ class ExceptionHandlerManager
     public function clearHandlers(): self
     {
         $this->handlers = [];
+
         return $this;
     }
 
@@ -156,6 +159,7 @@ class ExceptionHandlerManager
     public function setDiscovery(HandlerDiscovery $discovery): self
     {
         $this->discovery = $discovery;
+
         return $this;
     }
 
@@ -190,6 +194,7 @@ class ExceptionHandlerManager
     public function removeHandlerPath(string $path): self
     {
         $this->discovery->removePath($path);
+
         return $this;
     }
 
@@ -199,6 +204,7 @@ class ExceptionHandlerManager
     public function clearHandlerPaths(): self
     {
         $this->discovery->clearPaths();
+
         return $this;
     }
 }

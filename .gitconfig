@@ -1,0 +1,4 @@
+[core]
+	hooksPath = .git/hooks
+[hook]
+	executeHooks = true

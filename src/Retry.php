@@ -71,6 +71,7 @@ class Retry
     public function withStrategy(RetryStrategy $strategy): self
     {
         $this->strategy = $strategy;
+
         return $this;
     }
 
@@ -78,10 +79,11 @@ class Retry
      * Execute an operation with retries.
      *
      * @template T
+     *
      * @param  Closure(): T  $operation  The operation to execute
      * @param  array<string>  $additionalPatterns  Additional retryable error patterns
      * @param  array<class-string<Throwable>>  $additionalExceptions  Additional retryable exception types
-     * @return T  The operation result
+     * @return T The operation result
      *
      * @throws Throwable
      */
@@ -180,6 +182,7 @@ class Retry
     public function withProgress(Closure $callback): self
     {
         $this->progressCallback = $callback;
+
         return $this;
     }
 
@@ -189,6 +192,7 @@ class Retry
     public function maxRetries(int $retries): self
     {
         $this->maxRetries = $retries;
+
         return $this;
     }
 
@@ -198,6 +202,7 @@ class Retry
     public function retryDelay(int $seconds): self
     {
         $this->retryDelay = $seconds;
+
         return $this;
     }
 
@@ -207,6 +212,7 @@ class Retry
     public function timeout(int $seconds): self
     {
         $this->timeout = $seconds;
+
         return $this;
     }
 

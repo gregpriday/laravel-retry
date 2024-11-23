@@ -19,12 +19,12 @@ class HandlerDiscovery
     /**
      * Create a new handler discovery instance.
      *
-     * @param array<string> $paths Additional paths to search for handlers
+     * @param  array<string>  $paths  Additional paths to search for handlers
      */
     public function __construct(array $paths = [])
     {
         // Add default package handlers path
-        $this->paths[] = __DIR__ . '/Handlers';
+        $this->paths[] = __DIR__.'/Handlers';
 
         // Add application handlers path if it exists
         if (function_exists('app_path')) {
@@ -41,6 +41,7 @@ class HandlerDiscovery
     public function addPath(string $path): self
     {
         $this->paths[] = $path;
+
         return $this;
     }
 
@@ -57,11 +58,12 @@ class HandlerDiscovery
     /**
      * Set the handler paths.
      *
-     * @param array<string> $paths
+     * @param  array<string>  $paths
      */
     public function setPaths(array $paths): self
     {
         $this->paths = $paths;
+
         return $this;
     }
 
@@ -112,21 +114,19 @@ class HandlerDiscovery
 
     /**
      * Load a handler class from a file.
-     *
-     * @return RetryableExceptionHandler|null
      */
     protected function loadHandlerClass(string $file): ?RetryableExceptionHandler
     {
         $className = $this->getClassNameFromFile($file);
 
-        if (!$className || !class_exists($className)) {
+        if (! $className || ! class_exists($className)) {
             return null;
         }
 
         $reflection = new ReflectionClass($className);
 
         if ($reflection->isAbstract() ||
-            !$reflection->implementsInterface(RetryableExceptionHandler::class)) {
+            ! $reflection->implementsInterface(RetryableExceptionHandler::class)) {
             return null;
         }
 
@@ -144,16 +144,16 @@ class HandlerDiscovery
         }
 
         // Extract namespace
-        if (!preg_match('/namespace\s+([^;]+);/', $contents, $namespaceMatches)) {
+        if (! preg_match('/namespace\s+([^;]+);/', $contents, $namespaceMatches)) {
             return null;
         }
 
         // Extract class name
-        if (!preg_match('/class\s+(\w+)/', $contents, $classMatches)) {
+        if (! preg_match('/class\s+(\w+)/', $contents, $classMatches)) {
             return null;
         }
 
-        return $namespaceMatches[1] . '\\' . $classMatches[1];
+        return $namespaceMatches[1].'\\'.$classMatches[1];
     }
 
     /**
@@ -164,6 +164,7 @@ class HandlerDiscovery
         $this->paths = array_filter($this->paths, function ($existingPath) use ($path) {
             return $existingPath !== $path;
         });
+
         return $this;
     }
 
@@ -173,6 +174,7 @@ class HandlerDiscovery
     public function clearPaths(): self
     {
         $this->paths = [];
+
         return $this;
     }
 }

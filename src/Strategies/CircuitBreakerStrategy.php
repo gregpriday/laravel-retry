@@ -8,19 +8,23 @@ use Throwable;
 class CircuitBreakerStrategy implements RetryStrategy
 {
     private const CIRCUIT_OPEN = 'open';
+
     private const CIRCUIT_CLOSED = 'closed';
+
     private const CIRCUIT_HALF_OPEN = 'half-open';
 
     private string $state = self::CIRCUIT_CLOSED;
+
     private int $failureCount = 0;
+
     private ?int $openedAt = null;
 
     /**
      * Create a new circuit breaker strategy.
      *
-     * @param RetryStrategy $innerStrategy The wrapped retry strategy
-     * @param int $failureThreshold Number of failures before opening circuit
-     * @param int $resetTimeout Seconds before attempting reset (half-open)
+     * @param  RetryStrategy  $innerStrategy  The wrapped retry strategy
+     * @param  int  $failureThreshold  Number of failures before opening circuit
+     * @param  int  $resetTimeout  Seconds before attempting reset (half-open)
      */
     public function __construct(
         protected RetryStrategy $innerStrategy,
@@ -33,8 +37,8 @@ class CircuitBreakerStrategy implements RetryStrategy
     /**
      * Calculate the delay for the next retry attempt.
      *
-     * @param int $attempt Current attempt number (0-based)
-     * @param float $baseDelay Base delay in seconds
+     * @param  int  $attempt  Current attempt number (0-based)
+     * @param  float  $baseDelay  Base delay in seconds
      * @return int Delay in seconds
      */
     public function getDelay(int $attempt, float $baseDelay): int
@@ -45,15 +49,14 @@ class CircuitBreakerStrategy implements RetryStrategy
     /**
      * Determine if another retry attempt should be made.
      *
-     * @param int $attempt Current attempt number (0-based)
-     * @param int $maxAttempts Maximum number of attempts allowed
-     * @param Throwable|null $lastException The last exception that occurred
-     * @return bool
+     * @param  int  $attempt  Current attempt number (0-based)
+     * @param  int  $maxAttempts  Maximum number of attempts allowed
+     * @param  Throwable|null  $lastException  The last exception that occurred
      */
     public function shouldRetry(int $attempt, int $maxAttempts, ?Throwable $lastException = null): bool
     {
         // First check if we've exceeded max attempts
-        if (!$this->innerStrategy->shouldRetry($attempt, $maxAttempts, $lastException)) {
+        if (! $this->innerStrategy->shouldRetry($attempt, $maxAttempts, $lastException)) {
             return false;
         }
 
@@ -61,8 +64,10 @@ class CircuitBreakerStrategy implements RetryStrategy
         if ($this->state === self::CIRCUIT_OPEN) {
             if ($this->shouldAttemptReset()) {
                 $this->setCircuitState(self::CIRCUIT_HALF_OPEN);
+
                 return true;
             }
+
             return false;
         }
 
@@ -70,9 +75,11 @@ class CircuitBreakerStrategy implements RetryStrategy
         if ($this->state === self::CIRCUIT_HALF_OPEN) {
             if ($lastException) {
                 $this->openCircuit();
+
                 return false;
             }
             $this->closeCircuit(); // Success in half-open state closes the circuit
+
             return true;
         }
 
@@ -81,6 +88,7 @@ class CircuitBreakerStrategy implements RetryStrategy
             $this->incrementFailureCount();
             if ($this->failureCount > $this->failureThreshold) {
                 $this->openCircuit();
+
                 return false;
             }
         } else {

@@ -14,13 +14,15 @@ class RetryServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->mergeConfigFrom(
-            __DIR__.'/../config/retry.php', 'retry'
+            __DIR__.'/../config/retry.php',
+            'retry'
         );
 
         // Register the ExceptionHandlerManager as a singleton
         $this->app->singleton(ExceptionHandlerManager::class, function ($app) {
             $manager = new ExceptionHandlerManager();
             $manager->registerDefaultHandlers();
+
             return $manager;
         });
 

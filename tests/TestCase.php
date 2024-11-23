@@ -2,16 +2,17 @@
 
 namespace GregPriday\LaravelRetry\Tests;
 
-use GregPriday\LaravelRetry\RetryServiceProvider;
-use Orchestra\Testbench\TestCase as OrchestraTestCase;
-use GregPriday\LaravelRetry\Retry;
 use GregPriday\LaravelRetry\Exceptions\ExceptionHandlerManager;
 use GregPriday\LaravelRetry\Exceptions\Handlers\GuzzleHandler;
+use GregPriday\LaravelRetry\Retry;
+use GregPriday\LaravelRetry\RetryServiceProvider;
 use Mockery;
+use Orchestra\Testbench\TestCase as OrchestraTestCase;
 
 abstract class TestCase extends OrchestraTestCase
 {
     protected Retry $retry;
+
     protected ExceptionHandlerManager $exceptionManager;
 
     protected function setUp(): void
@@ -28,7 +29,7 @@ abstract class TestCase extends OrchestraTestCase
         }
 
         // Verify handler registration
-        if (!$this->exceptionManager->hasHandler(GuzzleHandler::class)) {
+        if (! $this->exceptionManager->hasHandler(GuzzleHandler::class)) {
             throw new \RuntimeException('GuzzleHandler was not properly registered');
         }
 
@@ -64,11 +65,13 @@ abstract class TestCase extends OrchestraTestCase
         &$counter = 0
     ): callable {
         $counter = 0; // Initialize counter
+
         return function () use ($failCount, $exceptionMessage, &$counter) {
             $counter++;
             if ($counter <= $failCount) {
                 throw $this->createGuzzleException($exceptionMessage);
             }
+
             return 'success';
         };
     }

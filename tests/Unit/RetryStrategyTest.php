@@ -2,15 +2,15 @@
 
 namespace GregPriday\LaravelRetry\Tests\Unit;
 
+use Generator;
+use GregPriday\LaravelRetry\Contracts\RetryStrategy;
 use GregPriday\LaravelRetry\Strategies\CircuitBreakerStrategy;
 use GregPriday\LaravelRetry\Strategies\DecorrelatedJitterStrategy;
 use GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy;
 use GregPriday\LaravelRetry\Strategies\FixedDelayStrategy;
 use GregPriday\LaravelRetry\Strategies\LinearBackoffStrategy;
 use GregPriday\LaravelRetry\Strategies\RateLimitStrategy;
-use GregPriday\LaravelRetry\Contracts\RetryStrategy;
 use GregPriday\LaravelRetry\Tests\TestCase;
-use Generator;
 
 class RetryStrategyTest extends TestCase
 {
@@ -23,6 +23,7 @@ class RetryStrategyTest extends TestCase
             'strategy' => new ExponentialBackoffStrategy(multiplier: 2.0, maxDelay: 30),
             'expectedDelayPattern' => function (int $attempt, float $baseDelay): array {
                 $delay = $baseDelay * pow(2, $attempt);
+
                 return [
                     'min' => (int) min($delay, 30),
                     'max' => (int) min($delay, 30),
@@ -34,6 +35,7 @@ class RetryStrategyTest extends TestCase
             'strategy' => new LinearBackoffStrategy(increment: 5, maxDelay: 30),
             'expectedDelayPattern' => function (int $attempt, float $baseDelay) {
                 $delay = $baseDelay + (5 * $attempt);
+
                 return [
                     'min' => (int) min($delay, 30),
                     'max' => (int) min($delay, 30),
