@@ -5,6 +5,7 @@ namespace GregPriday\LaravelRetry\Exceptions;
 use GregPriday\LaravelRetry\Contracts\RetryableExceptionHandler;
 use Illuminate\Support\Collection;
 use ReflectionClass;
+use SplFileInfo;
 use Symfony\Component\Finder\Finder;
 
 class HandlerDiscovery
@@ -93,7 +94,7 @@ class HandlerDiscovery
      */
     protected function findHandlerFiles(): Collection
     {
-        $finder = new Finder();
+        $finder = new Finder;
 
         return Collection::make($this->paths)
             ->filter(function (string $path) {
@@ -107,7 +108,7 @@ class HandlerDiscovery
                         ->notName('BaseHandler.php')
                 );
             })
-            ->map(function (\SplFileInfo $file) {
+            ->map(function (SplFileInfo $file) {
                 return $file->getRealPath();
             });
     }
@@ -130,7 +131,7 @@ class HandlerDiscovery
             return null;
         }
 
-        return new $className();
+        return new $className;
     }
 
     /**

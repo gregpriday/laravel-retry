@@ -3,6 +3,7 @@
 namespace GregPriday\LaravelRetry\Exceptions;
 
 use GregPriday\LaravelRetry\Contracts\RetryableExceptionHandler;
+use Throwable;
 
 class ExceptionHandlerManager
 {
@@ -23,7 +24,7 @@ class ExceptionHandlerManager
      */
     public function __construct(?HandlerDiscovery $discovery = null)
     {
-        $this->discovery = $discovery ?? new HandlerDiscovery();
+        $this->discovery = $discovery ?? new HandlerDiscovery;
     }
 
     /**
@@ -82,7 +83,7 @@ class ExceptionHandlerManager
     /**
      * Get all registered exceptions from all handlers.
      *
-     * @return array<class-string<\Throwable>>
+     * @return array<class-string<Throwable>>
      */
     public function getAllExceptions(): array
     {

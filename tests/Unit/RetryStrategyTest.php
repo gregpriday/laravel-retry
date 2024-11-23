@@ -11,6 +11,7 @@ use GregPriday\LaravelRetry\Strategies\FixedDelayStrategy;
 use GregPriday\LaravelRetry\Strategies\LinearBackoffStrategy;
 use GregPriday\LaravelRetry\Strategies\RateLimitStrategy;
 use GregPriday\LaravelRetry\Tests\TestCase;
+use RuntimeException;
 
 class RetryStrategyTest extends TestCase
 {
@@ -20,7 +21,7 @@ class RetryStrategyTest extends TestCase
     public function strategyProvider(): Generator
     {
         yield 'exponential backoff' => [
-            'strategy' => new ExponentialBackoffStrategy(multiplier: 2.0, maxDelay: 30),
+            'strategy'             => new ExponentialBackoffStrategy(multiplier: 2.0, maxDelay: 30),
             'expectedDelayPattern' => function (int $attempt, float $baseDelay): array {
                 $delay = $baseDelay * pow(2, $attempt);
 
@@ -32,7 +33,7 @@ class RetryStrategyTest extends TestCase
         ];
 
         yield 'linear backoff' => [
-            'strategy' => new LinearBackoffStrategy(increment: 5, maxDelay: 30),
+            'strategy'             => new LinearBackoffStrategy(increment: 5, maxDelay: 30),
             'expectedDelayPattern' => function (int $attempt, float $baseDelay) {
                 $delay = $baseDelay + (5 * $attempt);
 
@@ -44,7 +45,7 @@ class RetryStrategyTest extends TestCase
         ];
 
         yield 'fixed delay' => [
-            'strategy' => new FixedDelayStrategy(),
+            'strategy'             => new FixedDelayStrategy,
             'expectedDelayPattern' => function (int $attempt, float $baseDelay) {
                 return [
                     'min' => (int) $baseDelay,
@@ -54,7 +55,7 @@ class RetryStrategyTest extends TestCase
         ];
 
         yield 'fixed delay with jitter' => [
-            'strategy' => new FixedDelayStrategy(withJitter: true, jitterPercent: 0.2),
+            'strategy'             => new FixedDelayStrategy(withJitter: true, jitterPercent: 0.2),
             'expectedDelayPattern' => function (int $attempt, float $baseDelay) {
                 return [
                     'min' => (int) ($baseDelay * 0.8),
@@ -64,7 +65,7 @@ class RetryStrategyTest extends TestCase
         ];
 
         yield 'decorrelated jitter' => [
-            'strategy' => new DecorrelatedJitterStrategy(maxDelay: 30),
+            'strategy'             => new DecorrelatedJitterStrategy(maxDelay: 30),
             'expectedDelayPattern' => function (int $attempt, float $baseDelay) {
                 return [
                     'min' => (int) $baseDelay,
@@ -75,7 +76,7 @@ class RetryStrategyTest extends TestCase
 
         yield 'rate limit' => [
             'strategy' => new RateLimitStrategy(
-                innerStrategy: new FixedDelayStrategy(),
+                innerStrategy: new FixedDelayStrategy,
                 maxAttempts: 5,
                 timeWindow: 10
             ),
@@ -89,7 +90,7 @@ class RetryStrategyTest extends TestCase
 
         yield 'circuit breaker' => [
             'strategy' => new CircuitBreakerStrategy(
-                innerStrategy: new FixedDelayStrategy(),
+                innerStrategy: new FixedDelayStrategy,
                 failureThreshold: 3,
                 resetTimeout: 5
             ),
@@ -159,7 +160,7 @@ class RetryStrategyTest extends TestCase
      */
     public function test_strategy_handles_exceptions(RetryStrategy $strategy): void
     {
-        $exception = new \RuntimeException('Test exception');
+        $exception = new RuntimeException('Test exception');
         $maxAttempts = 3;
 
         // Strategy should allow retries with exception if under max attempts
@@ -178,7 +179,7 @@ class RetryStrategyTest extends TestCase
     public function test_rate_limit_strategy_specific_behavior(): void
     {
         $strategy = new RateLimitStrategy(
-            innerStrategy: new FixedDelayStrategy(),
+            innerStrategy: new FixedDelayStrategy,
             maxAttempts: 3,
             timeWindow: 1
         );
@@ -201,12 +202,12 @@ class RetryStrategyTest extends TestCase
     public function test_circuit_breaker_strategy_specific_behavior(): void
     {
         $strategy = new CircuitBreakerStrategy(
-            innerStrategy: new FixedDelayStrategy(),
+            innerStrategy: new FixedDelayStrategy,
             failureThreshold: 2,
             resetTimeout: 1
         );
 
-        $exception = new \RuntimeException('Test exception');
+        $exception = new RuntimeException('Test exception');
 
         // Circuit should start closed
         $this->assertTrue($strategy->shouldRetry(0, 5, null));

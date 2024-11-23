@@ -96,7 +96,7 @@ class RateLimitStrategy implements RetryStrategy
     protected function recordAttempt(): void
     {
         self::$attemptStorage[$this->storageKey][] = [
-            'timestamp' => time(),
+            'timestamp'  => time(),
             'window_end' => time() + $this->timeWindow,
         ];
     }
@@ -186,11 +186,11 @@ class RateLimitStrategy implements RetryStrategy
     {
         return [
             'max_attempts' => $this->maxAttempts,
-            'time_window' => $this->timeWindow,
-            'remaining' => $this->getRemainingAttempts(),
-            'reset_in' => $this->getTimeUntilReset(),
+            'time_window'  => $this->timeWindow,
+            'remaining'    => $this->getRemainingAttempts(),
+            'reset_in'     => $this->getTimeUntilReset(),
             'current_rate' => $this->getCurrentRate(),
-            'storage_key' => $this->storageKey,
+            'storage_key'  => $this->storageKey,
         ];
     }
 }

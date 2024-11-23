@@ -20,7 +20,7 @@ class RetryServiceProvider extends ServiceProvider
 
         // Register the ExceptionHandlerManager as a singleton
         $this->app->singleton(ExceptionHandlerManager::class, function ($app) {
-            $manager = new ExceptionHandlerManager();
+            $manager = new ExceptionHandlerManager;
             $manager->registerDefaultHandlers();
 
             return $manager;
@@ -32,7 +32,7 @@ class RetryServiceProvider extends ServiceProvider
                 maxRetries: config('retry.max_retries'),
                 retryDelay: config('retry.delay'),
                 timeout: config('retry.timeout'),
-                strategy: new ExponentialBackoffStrategy(),
+                strategy: new ExponentialBackoffStrategy,
                 exceptionManager: $app->make(ExceptionHandlerManager::class)
             );
         });

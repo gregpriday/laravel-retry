@@ -6,6 +6,7 @@ use Closure;
 use GregPriday\LaravelRetry\Contracts\RetryStrategy;
 use GregPriday\LaravelRetry\Exceptions\ExceptionHandlerManager;
 use GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy;
+use RuntimeException;
 use Throwable;
 
 class Retry
@@ -60,8 +61,8 @@ class Retry
         $this->maxRetries = $maxRetries ?? config('retry.max_retries', self::DEFAULT_MAX_RETRIES);
         $this->retryDelay = $retryDelay ?? config('retry.delay', self::DEFAULT_RETRY_DELAY);
         $this->timeout = $timeout ?? config('retry.timeout', self::DEFAULT_TIMEOUT);
-        $this->exceptionManager = $exceptionManager ?? new ExceptionHandlerManager();
-        $this->strategy = $strategy ?? new ExponentialBackoffStrategy();
+        $this->exceptionManager = $exceptionManager ?? new ExceptionHandlerManager;
+        $this->strategy = $strategy ?? new ExponentialBackoffStrategy;
         $this->exceptionManager->registerDefaultHandlers();
     }
 
@@ -116,7 +117,7 @@ class Retry
             }
         }
 
-        throw $lastException ?? new \RuntimeException(
+        throw $lastException ?? new RuntimeException(
             "Operation failed after {$this->maxRetries} attempts"
         );
     }

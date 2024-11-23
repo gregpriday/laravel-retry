@@ -2,6 +2,8 @@
 
 namespace GregPriday\LaravelRetry\Contracts;
 
+use Throwable;
+
 interface RetryableExceptionHandler
 {
     /**
@@ -14,7 +16,7 @@ interface RetryableExceptionHandler
     /**
      * Get the list of exception classes that should be retried.
      *
-     * @return array<class-string<\Throwable>>
+     * @return array<class-string<Throwable>>
      */
     public function getExceptions(): array;
 

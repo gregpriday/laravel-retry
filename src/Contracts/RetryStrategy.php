@@ -2,6 +2,8 @@
 
 namespace GregPriday\LaravelRetry\Contracts;
 
+use Throwable;
+
 interface RetryStrategy
 {
     /**
@@ -18,7 +20,7 @@ interface RetryStrategy
      *
      * @param  int  $attempt  Current attempt number (0-based)
      * @param  int  $maxAttempts  Maximum number of attempts allowed
-     * @param  \Throwable|null  $lastException  The last exception that occurred
+     * @param  Throwable|null  $lastException  The last exception that occurred
      */
-    public function shouldRetry(int $attempt, int $maxAttempts, ?\Throwable $lastException = null): bool;
+    public function shouldRetry(int $attempt, int $maxAttempts, ?Throwable $lastException = null): bool;
 }

@@ -3,6 +3,7 @@
 namespace GregPriday\LaravelRetry\Exceptions\Handlers;
 
 use GregPriday\LaravelRetry\Contracts\RetryableExceptionHandler;
+use Throwable;
 
 abstract class BaseHandler implements RetryableExceptionHandler
 {
@@ -31,7 +32,7 @@ abstract class BaseHandler implements RetryableExceptionHandler
     /**
      * Get handler-specific exception classes.
      *
-     * @return array<class-string<\Throwable>>
+     * @return array<class-string<Throwable>>
      */
     abstract protected function getHandlerExceptions(): array;
 
@@ -51,7 +52,7 @@ abstract class BaseHandler implements RetryableExceptionHandler
     /**
      * Get all exception classes.
      *
-     * @return array<class-string<\Throwable>>
+     * @return array<class-string<Throwable>>
      */
     public function getExceptions(): array
     {

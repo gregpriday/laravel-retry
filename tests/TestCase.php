@@ -8,6 +8,7 @@ use GregPriday\LaravelRetry\Retry;
 use GregPriday\LaravelRetry\RetryServiceProvider;
 use Mockery;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
+use RuntimeException;
 
 abstract class TestCase extends OrchestraTestCase
 {
@@ -20,17 +21,17 @@ abstract class TestCase extends OrchestraTestCase
         parent::setUp();
 
         // Create and configure exception manager
-        $this->exceptionManager = new ExceptionHandlerManager();
+        $this->exceptionManager = new ExceptionHandlerManager;
 
         // Explicitly register the GuzzleHandler
-        $guzzleHandler = new GuzzleHandler();
+        $guzzleHandler = new GuzzleHandler;
         if ($guzzleHandler->isApplicable()) {
             $this->exceptionManager->registerHandler($guzzleHandler);
         }
 
         // Verify handler registration
         if (! $this->exceptionManager->hasHandler(GuzzleHandler::class)) {
-            throw new \RuntimeException('GuzzleHandler was not properly registered');
+            throw new RuntimeException('GuzzleHandler was not properly registered');
         }
 
         // Create retry instance with explicit configuration

@@ -2,8 +2,10 @@
 
 namespace GregPriday\LaravelRetry\Tests\Unit;
 
+use Exception;
 use GregPriday\LaravelRetry\Tests\TestCase;
 use GuzzleHttp\Exception\ConnectException;
+use RuntimeException;
 
 class RetryTest extends TestCase
 {
@@ -38,7 +40,7 @@ class RetryTest extends TestCase
 
     public function test_non_retryable_exception_throws_immediately(): void
     {
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('Non-retryable error');
 
         $counter = 0;
@@ -46,7 +48,7 @@ class RetryTest extends TestCase
         $this->retry->run(
             function () use (&$counter) {
                 $counter++;
-                throw new \RuntimeException('Non-retryable error');
+                throw new RuntimeException('Non-retryable error');
             }
         );
 
@@ -94,13 +96,13 @@ class RetryTest extends TestCase
             function () use (&$counter) {
                 $counter++;
                 if ($counter < 2) {
-                    throw new \Exception('Custom error pattern match');
+                    throw new Exception('Custom error pattern match');
                 }
 
                 return 'success';
             },
             ['/custom error pattern/i'],
-            [\Exception::class]
+            [Exception::class]
         );
 
         $this->assertEquals('success', $result);
