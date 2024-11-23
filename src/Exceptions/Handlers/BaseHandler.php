@@ -2,7 +2,7 @@
 
 namespace GregPriday\LaravelRetry\Exceptions\Handlers;
 
-use GregPriday\LaravelRetry\Exceptions\Contracts\RetryableExceptionHandler;
+use GregPriday\LaravelRetry\Contracts\RetryableExceptionHandler;
 
 abstract class BaseHandler implements RetryableExceptionHandler
 {

@@ -4,7 +4,7 @@ A robust and flexible retry mechanism for Laravel applications that handles tran
 
 ## Features
 
-- Exponential backoff retry strategy
+- Multiple retry strategies for different use cases
 - Configurable retry attempts, delays, and timeouts
 - Progress tracking and logging
 - Built-in support for common HTTP/Guzzle exceptions
@@ -73,6 +73,129 @@ class ExampleService
         });
     }
 }
+```
+
+## Retry Strategies
+
+The package includes several retry strategies to handle different scenarios and requirements. You can select the most appropriate strategy for your use case.
+
+### Available Strategies
+
+#### 1. Exponential Backoff Strategy (Default)
+Increases delay exponentially between retries, helping prevent overwhelming systems under stress.
+
+```php
+use GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy;
+
+$strategy = new ExponentialBackoffStrategy(
+    multiplier: 2.0,  // Each delay will be 2x longer
+    maxDelay: 30,     // Maximum delay in seconds
+    withJitter: true  // Add randomness to prevent thundering herd
+);
+
+Retry::withStrategy($strategy)->run(fn () => doSomething());
+```
+
+#### 2. Linear Backoff Strategy
+Increases delay linearly between retries. Useful when you want predictable, steady increases in delay.
+
+```php
+use GregPriday\LaravelRetry\Strategies\LinearBackoffStrategy;
+
+$strategy = new LinearBackoffStrategy(
+    increment: 5,    // Add 5 seconds each retry
+    maxDelay: 30    // Maximum delay in seconds
+);
+
+Retry::withStrategy($strategy)->run(fn () => doSomething());
+```
+
+#### 3. Fixed Delay Strategy
+Uses the same delay between all retries. Suitable for simple retry scenarios.
+
+```php
+use GregPriday\LaravelRetry\Strategies\FixedDelayStrategy;
+
+$strategy = new FixedDelayStrategy(
+    withJitter: true,      // Add randomness to prevent thundering herd
+    jitterPercent: 0.2    // ±20% jitter
+);
+
+Retry::withStrategy($strategy)->run(fn () => doSomething());
+```
+
+#### 4. Decorrelated Jitter Strategy
+Implements AWS's "Exponential Backoff and Jitter" algorithm for distributed systems.
+
+```php
+use GregPriday\LaravelRetry\Strategies\DecorrelatedJitterStrategy;
+
+$strategy = new DecorrelatedJitterStrategy(
+    maxDelay: 30,      // Maximum delay in seconds
+    minFactor: 1.0,    // Minimum multiplier for base delay
+    maxFactor: 3.0     // Maximum multiplier for base delay
+);
+
+Retry::withStrategy($strategy)->run(fn () => doSomething());
+```
+
+#### 5. Rate Limit Strategy
+Implements rate limiting across multiple retry attempts. Useful for APIs with rate limits.
+
+```php
+use GregPriday\LaravelRetry\Strategies\RateLimitStrategy;
+
+$strategy = new RateLimitStrategy(
+    innerStrategy: new FixedDelayStrategy(),  // Base strategy for delays
+    maxAttempts: 100,                        // Maximum attempts per time window
+    timeWindow: 60                           // Time window in seconds
+);
+
+Retry::withStrategy($strategy)->run(fn () => doSomething());
+```
+
+#### 6. Circuit Breaker Strategy
+Implements the Circuit Breaker pattern to prevent cascading failures in distributed systems.
+
+```php
+use GregPriday\LaravelRetry\Strategies\CircuitBreakerStrategy;
+
+$strategy = new CircuitBreakerStrategy(
+    innerStrategy: new ExponentialBackoffStrategy(),  // Base strategy for delays
+    failureThreshold: 5,                             // Failures before opening circuit
+    resetTimeout: 60                                 // Seconds before attempting reset
+);
+
+Retry::withStrategy($strategy)->run(fn () => doSomething());
+```
+
+### Strategy Selection Guide
+
+- **Exponential Backoff**: Default choice for most scenarios. Good balance between retry attempts and system protection.
+- **Linear Backoff**: When you need predictable delay increases and exponential might grow too quickly.
+- **Fixed Delay**: Simple scenarios where complexity isn't needed. Add jitter for distributed systems.
+- **Decorrelated Jitter**: Large-scale distributed systems where preventing thundering herd is critical.
+- **Rate Limit**: When working with rate-limited APIs or need to control request frequency.
+- **Circuit Breaker**: Protecting downstream services, preventing cascading failures in distributed systems.
+
+### Combining Strategies
+
+Strategies can be combined for more complex scenarios. For example, using Circuit Breaker with Rate Limit:
+
+```php
+$rateLimit = new RateLimitStrategy(
+    new ExponentialBackoffStrategy(),
+    maxAttempts: 100,
+    timeWindow: 60
+);
+
+$circuitBreaker = new CircuitBreakerStrategy(
+    $rateLimit,
+    failureThreshold: 5,
+    resetTimeout: 60
+);
+
+Retry::withStrategy($circuitBreaker)->run(fn () => doSomething());
 ```
 
 ## Advanced Usage

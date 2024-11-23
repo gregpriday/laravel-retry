@@ -1,6 +1,6 @@
 <?php
 
-namespace GregPriday\LaravelRetry\Exceptions\Contracts;
+namespace GregPriday\LaravelRetry\Contracts;
 
 interface RetryableExceptionHandler
 {

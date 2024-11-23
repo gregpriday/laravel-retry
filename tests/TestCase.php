@@ -6,6 +6,7 @@ use GregPriday\LaravelRetry\RetryServiceProvider;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
 use GregPriday\LaravelRetry\Retry;
 use GregPriday\LaravelRetry\Exceptions\ExceptionHandlerManager;
+use GregPriday\LaravelRetry\Exceptions\Handlers\GuzzleHandler;
 use Mockery;
 
 abstract class TestCase extends OrchestraTestCase
@@ -17,12 +18,24 @@ abstract class TestCase extends OrchestraTestCase
     {
         parent::setUp();
 
+        // Create and configure exception manager
         $this->exceptionManager = new ExceptionHandlerManager();
-        $this->exceptionManager->registerDefaultHandlers();
 
+        // Explicitly register the GuzzleHandler
+        $guzzleHandler = new GuzzleHandler();
+        if ($guzzleHandler->isApplicable()) {
+            $this->exceptionManager->registerHandler($guzzleHandler);
+        }
+
+        // Verify handler registration
+        if (!$this->exceptionManager->hasHandler(GuzzleHandler::class)) {
+            throw new \RuntimeException('GuzzleHandler was not properly registered');
+        }
+
+        // Create retry instance with explicit configuration
         $this->retry = new Retry(
             maxRetries: 3,
-            retryDelay: 1,
+            retryDelay: 0, // Set to 0 for faster tests
             timeout: 5,
             exceptionManager: $this->exceptionManager
         );
@@ -38,7 +51,7 @@ abstract class TestCase extends OrchestraTestCase
     protected function getEnvironmentSetUp($app): void
     {
         config()->set('retry.max_retries', 3);
-        config()->set('retry.delay', 1);
+        config()->set('retry.delay', 0); // Set to 0 for faster tests
         config()->set('retry.timeout', 5);
     }
 
@@ -48,14 +61,12 @@ abstract class TestCase extends OrchestraTestCase
     protected function createFailingCallback(
         int $failCount,
         string $exceptionMessage = 'Connection timed out',
-        &$counter = null
+        &$counter = 0
     ): callable {
+        $counter = 0; // Initialize counter
         return function () use ($failCount, $exceptionMessage, &$counter) {
-            if ($counter !== null) {
-                $counter++;
-            }
-
-            if ($counter === null || $counter <= $failCount) {
+            $counter++;
+            if ($counter <= $failCount) {
                 throw $this->createGuzzleException($exceptionMessage);
             }
             return 'success';

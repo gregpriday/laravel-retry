@@ -3,7 +3,9 @@
 namespace GregPriday\LaravelRetry;
 
 use Closure;
+use GregPriday\LaravelRetry\Contracts\RetryStrategy;
 use GregPriday\LaravelRetry\Exceptions\ExceptionHandlerManager;
+use GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy;
 use Throwable;
 
 class Retry
@@ -52,13 +54,24 @@ class Retry
         protected ?int $retryDelay = null,
         protected ?int $timeout = null,
         protected ?Closure $progressCallback = null,
+        protected ?RetryStrategy $strategy = null,
         protected ?ExceptionHandlerManager $exceptionManager = null
     ) {
         $this->maxRetries = $maxRetries ?? config('retry.max_retries', self::DEFAULT_MAX_RETRIES);
         $this->retryDelay = $retryDelay ?? config('retry.delay', self::DEFAULT_RETRY_DELAY);
         $this->timeout = $timeout ?? config('retry.timeout', self::DEFAULT_TIMEOUT);
         $this->exceptionManager = $exceptionManager ?? new ExceptionHandlerManager();
+        $this->strategy = $strategy ?? new ExponentialBackoffStrategy();
         $this->exceptionManager->registerDefaultHandlers();
+    }
+
+    /**
+     * Set the retry strategy.
+     */
+    public function withStrategy(RetryStrategy $strategy): self
+    {
+        $this->strategy = $strategy;
+        return $this;
     }
 
     /**
@@ -82,7 +95,7 @@ class Retry
         $patterns = [...$this->exceptionManager->getAllPatterns(), ...$additionalPatterns];
         $exceptions = [...$this->exceptionManager->getAllExceptions(), ...$additionalExceptions];
 
-        while ($attempt <= $this->maxRetries) {
+        while ($this->strategy->shouldRetry($attempt, $this->maxRetries, $lastException)) {
             try {
                 if (function_exists('set_time_limit')) {
                     set_time_limit($this->timeout);
@@ -141,7 +154,7 @@ class Retry
             return;
         }
 
-        $delay = $this->retryDelay * pow(2, $attempt);
+        $delay = $this->strategy->getDelay($attempt, $this->retryDelay);
         $message = sprintf(
             'Attempt %d failed: %s. Retrying in %d seconds... (%d attempts remaining)',
             $attempt + 1,
@@ -195,5 +208,45 @@ class Retry
     {
         $this->timeout = $seconds;
         return $this;
+    }
+
+    /**
+     * Get the current retry strategy.
+     */
+    public function getStrategy(): RetryStrategy
+    {
+        return $this->strategy;
+    }
+
+    /**
+     * Get the current maximum retries.
+     */
+    public function getMaxRetries(): int
+    {
+        return $this->maxRetries;
+    }
+
+    /**
+     * Get the current retry delay.
+     */
+    public function getRetryDelay(): int
+    {
+        return $this->retryDelay;
+    }
+
+    /**
+     * Get the current timeout.
+     */
+    public function getTimeout(): int
+    {
+        return $this->timeout;
+    }
+
+    /**
+     * Get the current exception handler manager.
+     */
+    public function getExceptionManager(): ExceptionHandlerManager
+    {
+        return $this->exceptionManager;
     }
 }

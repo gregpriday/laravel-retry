@@ -2,8 +2,7 @@
 
 namespace GregPriday\LaravelRetry\Exceptions;
 
-use GregPriday\LaravelRetry\Exceptions\Contracts\RetryableExceptionHandler;
-use ReflectionClass;
+use GregPriday\LaravelRetry\Contracts\RetryableExceptionHandler;
 
 class ExceptionHandlerManager
 {
@@ -15,49 +14,38 @@ class ExceptionHandlerManager
     protected array $handlers = [];
 
     /**
+     * The handler discovery instance.
+     */
+    protected HandlerDiscovery $discovery;
+
+    /**
      * Create a new exception handler manager instance.
      */
-    public function __construct()
+    public function __construct(?HandlerDiscovery $discovery = null)
     {
+        $this->discovery = $discovery ?? new HandlerDiscovery();
     }
 
     /**
-     * Register all handlers in the Handlers directory.
+     * Register all handlers in the configured paths.
      */
     public function registerDefaultHandlers(): self
     {
-        $handlersPath = __DIR__ . '/Handlers';
-        $namespace = __NAMESPACE__ . '\\Handlers\\';
+        $handlers = $this->discovery->discover();
 
-        if (!is_dir($handlersPath)) {
-            return $this;
+        foreach ($handlers as $handler) {
+            $this->registerHandler($handler);
         }
 
-        foreach (new \DirectoryIterator($handlersPath) as $file) {
-            if ($file->isDot() || $file->isDir()) {
-                continue;
-            }
+        return $this;
+    }
 
-            $className = $namespace . pathinfo($file->getFilename(), PATHINFO_FILENAME);
-
-            // Skip the abstract BaseHandler class
-            if ($className === $namespace . 'BaseHandler') {
-                continue;
-            }
-
-            if (class_exists($className) && is_subclass_of($className, RetryableExceptionHandler::class)) {
-                $reflection = new ReflectionClass($className);
-
-                if (!$reflection->isAbstract()) {
-                    $handler = new $className();
-
-                    if ($handler->isApplicable()) {
-                        $this->registerHandler($handler);
-                    }
-                }
-            }
-        }
-
+    /**
+     * Add a custom path to search for handlers.
+     */
+    public function addHandlerPath(string $path): self
+    {
+        $this->discovery->addPath($path);
         return $this;
     }
 
@@ -151,6 +139,66 @@ class ExceptionHandlerManager
     public function clearHandlers(): self
     {
         $this->handlers = [];
+        return $this;
+    }
+
+    /**
+     * Get the handler discovery instance.
+     */
+    public function getDiscovery(): HandlerDiscovery
+    {
+        return $this->discovery;
+    }
+
+    /**
+     * Set the handler discovery instance.
+     */
+    public function setDiscovery(HandlerDiscovery $discovery): self
+    {
+        $this->discovery = $discovery;
+        return $this;
+    }
+
+    /**
+     * Register handlers from a specific path immediately.
+     */
+    public function registerHandlersFromPath(string $path): self
+    {
+        $this->addHandlerPath($path);
+        $handlers = $this->discovery->discover();
+
+        foreach ($handlers as $handler) {
+            $this->registerHandler($handler);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Get all configured handler paths.
+     *
+     * @return array<string>
+     */
+    public function getHandlerPaths(): array
+    {
+        return $this->discovery->getPaths();
+    }
+
+    /**
+     * Remove a handler path.
+     */
+    public function removeHandlerPath(string $path): self
+    {
+        $this->discovery->removePath($path);
+        return $this;
+    }
+
+    /**
+     * Clear all handler paths.
+     */
+    public function clearHandlerPaths(): self
+    {
+        $this->discovery->clearPaths();
         return $this;
     }
 }

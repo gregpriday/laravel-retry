@@ -3,6 +3,7 @@
 namespace GregPriday\LaravelRetry;
 
 use GregPriday\LaravelRetry\Exceptions\ExceptionHandlerManager;
+use GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy;
 use Illuminate\Support\ServiceProvider;
 
 class RetryServiceProvider extends ServiceProvider
@@ -23,12 +24,13 @@ class RetryServiceProvider extends ServiceProvider
             return $manager;
         });
 
-        // Register the Retry class as a singleton with the ExceptionHandlerManager
+        // Register the Retry class as a singleton
         $this->app->singleton(Retry::class, function ($app) {
             return new Retry(
                 maxRetries: config('retry.max_retries'),
                 retryDelay: config('retry.delay'),
                 timeout: config('retry.timeout'),
+                strategy: new ExponentialBackoffStrategy(),
                 exceptionManager: $app->make(ExceptionHandlerManager::class)
             );
         });

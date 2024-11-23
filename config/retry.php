@@ -33,4 +33,17 @@ return [
     |
     */
     'timeout' => env('RETRY_TIMEOUT', 120),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Handler Paths
+    |--------------------------------------------------------------------------
+    |
+    | Additional paths where retry handlers can be found. Package handlers and
+    | application handlers (app/Exceptions/Retry/Handlers) are included by default.
+    |
+    */
+    'handler_paths' => [
+        // Add custom paths here
+    ],
 ];
