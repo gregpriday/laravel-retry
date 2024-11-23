@@ -71,13 +71,15 @@ class RateLimitStrategy implements RetryStrategy
         }
 
         $currentRate = $this->getCurrentRate();
-        if ($currentRate >= $this->maxAttempts) {
-            return false;
+
+        // Only record the attempt if we're actually going to allow it
+        if ($currentRate < $this->maxAttempts) {
+            $this->recordAttempt();
+
+            return true;
         }
 
-        $this->recordAttempt();
-
-        return true;
+        return false;
     }
 
     /**
