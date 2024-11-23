@@ -6,6 +6,7 @@ use Exception;
 use GregPriday\LaravelRetry\Tests\TestCase;
 use GuzzleHttp\Exception\ConnectException;
 use RuntimeException;
+use Throwable;
 
 class RetryTest extends TestCase
 {
@@ -249,5 +250,164 @@ class RetryTest extends TestCase
                 'Exception history timestamps should be sequential'
             );
         }
+    }
+
+    public function test_retry_if_condition_controls_retry_behavior(): void
+    {
+        $counter = 0;
+        $this->retry->maxRetries(5); // Ensure we have enough retries
+
+        $result = $this->retry
+            ->retryIf(function (Throwable $e, array $context) {
+                // Always retry for first two attempts, then stop
+                return $context['attempt'] < 2;
+            })
+            ->run(function () use (&$counter) {
+                $counter++;
+                if ($counter < 3) {
+                    throw new ConnectException(
+                        'Connection timed out',
+                        new \GuzzleHttp\Psr7\Request('GET', 'http://example.com')
+                    );
+                }
+
+                return 'success';
+            });
+
+        $this->assertEquals('success', $result);
+        $this->assertEquals(3, $counter);
+
+        $history = $this->retry->getExceptionHistory();
+        $this->assertCount(2, $history);
+
+        // First attempt (attempt 0) should be retryable
+        $this->assertTrue($history[0]['was_retryable']);
+
+        // Second attempt (attempt 1) should be retryable
+        $this->assertTrue($history[1]['was_retryable']);
+    }
+
+    public function test_retry_unless_condition_controls_retry_behavior(): void
+    {
+        $counter = 0;
+        $this->retry->maxRetries(5); // Ensure we have enough retries
+
+        $result = $this->retry
+            ->retryUnless(function (Throwable $e, array $context) {
+                // Stop retrying after seeing the same error twice
+                $sameErrorCount = count(array_filter(
+                    $context['exception_history'],
+                    fn ($entry) => $entry['exception']->getMessage() === 'Connection timed out'
+                ));
+
+                return $sameErrorCount >= 2;
+            })
+            ->run(function () use (&$counter) {
+                $counter++;
+                if ($counter < 3) {
+                    throw new ConnectException(
+                        'Connection timed out',
+                        new \GuzzleHttp\Psr7\Request('GET', 'http://example.com')
+                    );
+                }
+
+                return 'success';
+            });
+
+        $this->assertEquals('success', $result);
+        $this->assertEquals(3, $counter);
+
+        $history = $this->retry->getExceptionHistory();
+        $this->assertCount(2, $history);
+
+        // First attempt should be retryable
+        $this->assertTrue($history[0]['was_retryable']);
+
+        // Second attempt should be retryable
+        $this->assertTrue($history[1]['was_retryable']);
+    }
+
+    public function test_retry_unless_stops_retrying_when_condition_met(): void
+    {
+        $counter = 0;
+        $this->expectException(ConnectException::class);
+
+        $this->retry
+            ->retryUnless(function (Throwable $e, array $context) {
+                return count($context['exception_history']) >= 2;
+            })
+            ->run(function () use (&$counter) {
+                $counter++;
+                throw new ConnectException(
+                    'Connection timed out',
+                    new \GuzzleHttp\Psr7\Request('GET', 'http://example.com')
+                );
+            });
+    }
+
+    public function test_retry_if_receives_correct_context_data(): void
+    {
+        $contextData = [];
+
+        try {
+            $this->retry
+                ->maxRetries(3)
+                ->retryIf(function (Throwable $e, array $context) use (&$contextData) {
+                    $contextData[] = $context;
+
+                    return true;
+                })
+                ->run($this->createFailingCallback(4));
+        } catch (ConnectException $e) {
+            // Expected exception
+        }
+
+        $this->assertCount(3, $contextData);
+
+        // Verify first context
+        $this->assertEquals([
+            'attempt'            => 0,
+            'max_retries'        => 3,
+            'remaining_attempts' => 3,
+            'exception_history'  => [],
+        ], $contextData[0]);
+
+        // Verify second context
+        $this->assertEquals(1, $contextData[1]['attempt']);
+        $this->assertEquals(3, $contextData[1]['max_retries']);
+        $this->assertEquals(2, $contextData[1]['remaining_attempts']);
+        $this->assertCount(1, $contextData[1]['exception_history']);
+
+        // Verify third context
+        $this->assertEquals(2, $contextData[2]['attempt']);
+        $this->assertEquals(3, $contextData[2]['max_retries']);
+        $this->assertEquals(1, $contextData[2]['remaining_attempts']);
+        $this->assertCount(2, $contextData[2]['exception_history']);
+    }
+
+    public function test_retry_condition_can_override_standard_retry_rules(): void
+    {
+        $counter = 0;
+
+        try {
+            $this->retry
+                ->retryIf(function (Throwable $e, array $context) {
+                    return false; // Never retry
+                })
+                ->run(function () use (&$counter) {
+                    $counter++;
+                    throw new ConnectException(
+                        'Connection timed out',
+                        new \GuzzleHttp\Psr7\Request('GET', 'http://example.com')
+                    );
+                });
+        } catch (ConnectException $e) {
+            // Expected
+        }
+
+        $this->assertEquals(1, $counter);
+        $history = $this->retry->getExceptionHistory();
+        $this->assertCount(1, $history);
+        $this->assertFalse($history[0]['was_retryable']);
     }
 }

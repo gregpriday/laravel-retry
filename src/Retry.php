@@ -60,6 +60,18 @@ class Retry
     protected array $exceptionHistory = [];
 
     /**
+     * Custom condition for retry logic.
+     *
+     * @var (Closure(Throwable, array{
+     *   attempt: int,
+     *   max_retries: int,
+     *   remaining_attempts: int,
+     *   exception_history: array
+     * }): bool)|null
+     */
+    protected ?Closure $retryCondition = null;
+
+    /**
      * Create a new retry instance.
      */
     public function __construct(
@@ -79,11 +91,64 @@ class Retry
     }
 
     /**
+     * Create a new retry instance.
+     */
+    public static function make(
+        ?int $maxRetries = null,
+        ?int $retryDelay = null,
+        ?int $timeout = null,
+        ?RetryStrategy $strategy = null,
+        ?ExceptionHandlerManager $exceptionManager = null,
+    ): self {
+        return new static(
+            maxRetries: $maxRetries,
+            retryDelay: $retryDelay,
+            timeout: $timeout,
+            strategy: $strategy,
+            exceptionManager: $exceptionManager,
+        );
+    }
+
+    /**
      * Set the retry strategy.
      */
     public function withStrategy(RetryStrategy $strategy): self
     {
         $this->strategy = $strategy;
+
+        return $this;
+    }
+
+    /**
+     * Set a custom condition for determining if an operation should be retried.
+     *
+     * @param Closure(Throwable, array{
+     *   attempt: int,
+     *   max_retries: int,
+     *   remaining_attempts: int,
+     *   exception_history: array
+     * }): bool $condition
+     */
+    public function retryIf(Closure $condition): self
+    {
+        $this->retryCondition = $condition;
+
+        return $this;
+    }
+
+    /**
+     * Set a custom condition for determining if an operation should not be retried.
+     *
+     * @param Closure(Throwable, array{
+     *   attempt: int,
+     *   max_retries: int,
+     *   remaining_attempts: int,
+     *   exception_history: array
+     * }): bool $condition
+     */
+    public function retryUnless(Closure $condition): self
+    {
+        $this->retryCondition = fn (Throwable $e, array $context) => ! $condition($e, $context);
 
         return $this;
     }
@@ -152,6 +217,21 @@ class Retry
         array $patterns,
         array $exceptions
     ): bool {
+        // First check the custom condition if it exists
+        if ($this->retryCondition !== null) {
+            $context = [
+                'attempt'            => count($this->exceptionHistory),
+                'max_retries'        => $this->maxRetries,
+                'remaining_attempts' => $this->maxRetries - count($this->exceptionHistory),
+                'exception_history'  => $this->exceptionHistory,
+            ];
+
+            if (! ($this->retryCondition)($e, $context)) {
+                return false;
+            }
+        }
+
+        // Then check the standard retry conditions
         foreach ($exceptions as $exceptionClass) {
             if ($e instanceof $exceptionClass) {
                 return true;
