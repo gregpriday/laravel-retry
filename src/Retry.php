@@ -161,15 +161,13 @@ class Retry
      * @param  Closure(): T  $operation  The operation to execute
      * @param  array<string>  $additionalPatterns  Additional retryable error patterns
      * @param  array<class-string<Throwable>>  $additionalExceptions  Additional retryable exception types
-     * @return T The operation result
-     *
-     * @throws Throwable
+     * @return RetryResult The operation result wrapped in a RetryResult
      */
     public function run(
         Closure $operation,
         array $additionalPatterns = [],
         array $additionalExceptions = []
-    ): mixed {
+    ): RetryResult {
         $this->exceptionHistory = []; // Reset exception history at the start of each run
         $attempt = 0;
         $lastException = null;
@@ -182,7 +180,13 @@ class Retry
                     set_time_limit($this->timeout);
                 }
 
-                return $operation();
+                $result = $operation();
+
+                return new RetryResult(
+                    result: $result,
+                    error: null,
+                    exceptionHistory: $this->exceptionHistory
+                );
             } catch (Throwable $e) {
                 $lastException = $e;
                 $isRetryable = $this->isRetryable($e, $patterns, $exceptions);
@@ -199,13 +203,19 @@ class Retry
                     $this->handleRetryableError($e, $attempt);
                     $attempt++;
                 } else {
-                    throw $e;
+                    return new RetryResult(
+                        result: null,
+                        error: $e,
+                        exceptionHistory: $this->exceptionHistory
+                    );
                 }
             }
         }
 
-        throw $lastException ?? new RuntimeException(
-            "Operation failed after {$this->maxRetries} attempts"
+        return new RetryResult(
+            result: null,
+            error: $lastException ?? new RuntimeException("Operation failed after {$this->maxRetries} attempts"),
+            exceptionHistory: $this->exceptionHistory
         );
     }
 

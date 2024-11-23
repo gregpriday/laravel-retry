@@ -18,7 +18,7 @@ class RetryTest extends TestCase
             $counter++;
 
             return 'success';
-        });
+        })->value();
 
         $this->assertEquals('success', $result);
         $this->assertEquals(1, $counter);
@@ -26,7 +26,7 @@ class RetryTest extends TestCase
 
     public function test_operation_retries_on_retryable_exception(): void
     {
-        $result = $this->retry->run($this->createFailingCallback(2));
+        $result = $this->retry->run($this->createFailingCallback(2))->value();
 
         $this->assertEquals('success', $result);
     }
@@ -36,7 +36,7 @@ class RetryTest extends TestCase
         $this->expectException(ConnectException::class);
         $this->expectExceptionMessage('Connection timed out');
 
-        $this->retry->run($this->createFailingCallback(5));
+        $this->retry->run($this->createFailingCallback(5))->throw();
     }
 
     public function test_non_retryable_exception_throws_immediately(): void
@@ -51,7 +51,7 @@ class RetryTest extends TestCase
                 $counter++;
                 throw new RuntimeException('Non-retryable error');
             }
-        );
+        )->throw();
 
         $this->assertEquals(1, $counter);
     }
@@ -64,7 +64,8 @@ class RetryTest extends TestCase
             ->maxRetries(5)
             ->retryDelay(1)
             ->timeout(10)
-            ->run($this->createFailingCallback(3, 'Connection timed out', $counter));
+            ->run($this->createFailingCallback(3, 'Connection timed out', $counter))
+            ->value();
 
         $this->assertEquals('success', $result);
         $this->assertEquals(4, $counter);
@@ -74,16 +75,13 @@ class RetryTest extends TestCase
     {
         $progressMessages = [];
 
-        try {
-            $this->retry
-                ->withProgress(function ($message) use (&$progressMessages) {
-                    $progressMessages[] = $message;
-                })
-                ->run($this->createFailingCallback(4));
-        } catch (ConnectException $e) {
-            // Expected exception
-        }
+        $result = $this->retry
+            ->withProgress(function ($message) use (&$progressMessages) {
+                $progressMessages[] = $message;
+            })
+            ->run($this->createFailingCallback(4));
 
+        $this->assertTrue($result->failed());
         $this->assertCount(3, $progressMessages);
         $this->assertStringContainsString('Attempt 1 failed', $progressMessages[0]);
         $this->assertStringContainsString('Connection timed out', $progressMessages[0]);
@@ -104,7 +102,7 @@ class RetryTest extends TestCase
             },
             ['/custom error pattern/i'],
             [Exception::class]
-        );
+        )->value();
 
         $this->assertEquals('success', $result);
         $this->assertEquals(2, $counter);
@@ -114,33 +112,28 @@ class RetryTest extends TestCase
     {
         $result = \GregPriday\LaravelRetry\Facades\Retry::run(
             $this->createFailingCallback(2)
-        );
+        )->value();
 
         $this->assertEquals('success', $result);
     }
 
     public function test_exception_history_is_empty_on_successful_first_attempt(): void
     {
-        $this->retry->run(function () {
+        $result = $this->retry->run(function () {
             return 'success';
         });
 
-        $this->assertEmpty($this->retry->getExceptionHistory());
-        $this->assertEquals(0, $this->retry->getExceptionCount());
-        $this->assertEquals(0, $this->retry->getRetryableExceptionCount());
+        $this->assertTrue($result->succeeded());
+        $this->assertEmpty($result->getExceptionHistory());
     }
 
     public function test_exception_history_tracks_retryable_exceptions(): void
     {
-        $counter = 0;
-
         $result = $this->retry->run($this->createFailingCallback(2));
 
-        $history = $this->retry->getExceptionHistory();
+        $history = $result->getExceptionHistory();
 
         $this->assertCount(2, $history);
-        $this->assertEquals(2, $this->retry->getExceptionCount());
-        $this->assertEquals(2, $this->retry->getRetryableExceptionCount());
 
         // Verify first exception
         $this->assertEquals(0, $history[0]['attempt']);
@@ -157,19 +150,14 @@ class RetryTest extends TestCase
 
     public function test_exception_history_tracks_non_retryable_exceptions(): void
     {
-        try {
-            $this->retry->run(function () {
-                throw new RuntimeException('Non-retryable error');
-            });
-        } catch (RuntimeException $e) {
-            // Expected exception
-        }
+        $result = $this->retry->run(function () {
+            throw new RuntimeException('Non-retryable error');
+        });
 
-        $history = $this->retry->getExceptionHistory();
+        $history = $result->getExceptionHistory();
 
         $this->assertCount(1, $history);
-        $this->assertEquals(1, $this->retry->getExceptionCount());
-        $this->assertEquals(0, $this->retry->getRetryableExceptionCount());
+        $this->assertTrue($result->failed());
 
         $this->assertEquals(0, $history[0]['attempt']);
         $this->assertInstanceOf(RuntimeException::class, $history[0]['exception']);
@@ -180,47 +168,39 @@ class RetryTest extends TestCase
     public function test_exception_history_resets_between_runs(): void
     {
         // First run with failures
-        try {
-            $this->retry->run($this->createFailingCallback(4));
-        } catch (ConnectException $e) {
-            // Expected exception
-        }
-
-        $this->assertCount(3, $this->retry->getExceptionHistory());
+        $result1 = $this->retry->run($this->createFailingCallback(4));
+        $this->assertCount(3, $result1->getExceptionHistory());
 
         // Second run with success
-        $this->retry->run(function () {
+        $result2 = $this->retry->run(function () {
             return 'success';
         });
-
-        $this->assertEmpty($this->retry->getExceptionHistory());
+        $this->assertEmpty($result2->getExceptionHistory());
     }
 
     public function test_exception_history_with_mixed_exceptions(): void
     {
         $attempt = 0;
 
-        try {
-            $this->retry->run(function () use (&$attempt) {
-                $attempt++;
-                if ($attempt === 1) {
-                    throw new ConnectException('Connection timed out', new \GuzzleHttp\Psr7\Request('GET', 'http://example.com'));
-                }
-                if ($attempt === 2) {
-                    throw new RuntimeException('Non-retryable error');
-                }
+        $result = $this->retry->run(function () use (&$attempt) {
+            $attempt++;
+            if ($attempt === 1) {
+                throw new ConnectException(
+                    'Connection timed out',
+                    new \GuzzleHttp\Psr7\Request('GET', 'http://example.com')
+                );
+            }
+            if ($attempt === 2) {
+                throw new RuntimeException('Non-retryable error');
+            }
 
-                return 'success';
-            });
-        } catch (RuntimeException $e) {
-            // Expected exception
-        }
+            return 'success';
+        });
 
-        $history = $this->retry->getExceptionHistory();
+        $history = $result->getExceptionHistory();
 
         $this->assertCount(2, $history);
-        $this->assertEquals(2, $this->retry->getExceptionCount());
-        $this->assertEquals(1, $this->retry->getRetryableExceptionCount());
+        $this->assertTrue($result->failed());
 
         // First exception should be retryable
         $this->assertTrue($history[0]['was_retryable']);
@@ -233,13 +213,9 @@ class RetryTest extends TestCase
 
     public function test_exception_history_timestamps_are_sequential(): void
     {
-        try {
-            $this->retry->run($this->createFailingCallback(2));
-        } catch (ConnectException $e) {
-            // Expected exception
-        }
+        $result = $this->retry->run($this->createFailingCallback(2));
+        $history = $result->getExceptionHistory();
 
-        $history = $this->retry->getExceptionHistory();
         $this->assertGreaterThanOrEqual(2, count($history));
 
         // Verify timestamps are sequential
@@ -272,7 +248,7 @@ class RetryTest extends TestCase
                 }
 
                 return 'success';
-            });
+            })->value();
 
         $this->assertEquals('success', $result);
         $this->assertEquals(3, $counter);
@@ -312,7 +288,7 @@ class RetryTest extends TestCase
                 }
 
                 return 'success';
-            });
+            })->value();
 
         $this->assertEquals('success', $result);
         $this->assertEquals(3, $counter);
@@ -329,39 +305,34 @@ class RetryTest extends TestCase
 
     public function test_retry_unless_stops_retrying_when_condition_met(): void
     {
-        $counter = 0;
         $this->expectException(ConnectException::class);
 
         $this->retry
             ->retryUnless(function (Throwable $e, array $context) {
                 return count($context['exception_history']) >= 2;
             })
-            ->run(function () use (&$counter) {
-                $counter++;
+            ->run(function () {
                 throw new ConnectException(
                     'Connection timed out',
                     new \GuzzleHttp\Psr7\Request('GET', 'http://example.com')
                 );
-            });
+            })->throw();
     }
 
     public function test_retry_if_receives_correct_context_data(): void
     {
         $contextData = [];
 
-        try {
-            $this->retry
-                ->maxRetries(3)
-                ->retryIf(function (Throwable $e, array $context) use (&$contextData) {
-                    $contextData[] = $context;
+        $result = $this->retry
+            ->maxRetries(3)
+            ->retryIf(function (Throwable $e, array $context) use (&$contextData) {
+                $contextData[] = $context;
 
-                    return true;
-                })
-                ->run($this->createFailingCallback(4));
-        } catch (ConnectException $e) {
-            // Expected exception
-        }
+                return true;
+            })
+            ->run($this->createFailingCallback(4));
 
+        $this->assertTrue($result->failed());
         $this->assertCount(3, $contextData);
 
         // Verify first context
@@ -389,24 +360,22 @@ class RetryTest extends TestCase
     {
         $counter = 0;
 
-        try {
-            $this->retry
-                ->retryIf(function (Throwable $e, array $context) {
-                    return false; // Never retry
-                })
-                ->run(function () use (&$counter) {
-                    $counter++;
-                    throw new ConnectException(
-                        'Connection timed out',
-                        new \GuzzleHttp\Psr7\Request('GET', 'http://example.com')
-                    );
-                });
-        } catch (ConnectException $e) {
-            // Expected
-        }
+        $result = $this->retry
+            ->retryIf(function (Throwable $e, array $context) {
+                return false; // Never retry
+            })
+            ->run(function () use (&$counter) {
+                $counter++;
+                throw new ConnectException(
+                    'Connection timed out',
+                    new \GuzzleHttp\Psr7\Request('GET', 'http://example.com')
+                );
+            });
 
+        $this->assertTrue($result->failed());
         $this->assertEquals(1, $counter);
-        $history = $this->retry->getExceptionHistory();
+
+        $history = $result->getExceptionHistory();
         $this->assertCount(1, $history);
         $this->assertFalse($history[0]['was_retryable']);
     }
