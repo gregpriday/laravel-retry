@@ -31,7 +31,8 @@ class GuzzleResponseStrategyTest extends TestCase
     public function it_correctly_processes_retry_after_headers(
         array $headers,
         int $expectedDelay,
-        string $message
+        string $message,
+        bool $isTimeBased = false
     ): void {
         $response = new Response(429, $headers);
         $exception = $this->createRequestException($response);
@@ -41,7 +42,13 @@ class GuzzleResponseStrategyTest extends TestCase
 
         $delay = $this->strategy->getDelay(0, 5);
 
-        $this->assertEquals($expectedDelay, $delay, $message);
+        if ($isTimeBased) {
+            // Allow for a small timing difference (±10 seconds) for time-based tests
+            $this->assertGreaterThanOrEqual($expectedDelay - 10, $delay, $message);
+            $this->assertLessThanOrEqual($expectedDelay + 10, $delay, $message);
+        } else {
+            $this->assertEquals($expectedDelay, $delay, $message);
+        }
     }
 
     public function retryHeaderProvider(): array
@@ -53,26 +60,31 @@ class GuzzleResponseStrategyTest extends TestCase
                 ['Retry-After' => '30'],
                 30,
                 'Should use seconds directly from Retry-After header',
+                false,
             ],
             'date-based-retry-after' => [
                 ['Retry-After' => gmdate('D, d M Y H:i:s T', $now + 60)],
                 60,
                 'Should calculate seconds from date-based Retry-After header',
+                true,
             ],
             'x-ratelimit-reset-timestamp' => [
                 ['X-RateLimit-Reset' => (string) ($now + 120)],
                 120,
                 'Should calculate seconds from X-RateLimit-Reset timestamp',
+                true,
             ],
             'x-ratelimit-reset-seconds' => [
                 ['X-RateLimit-Reset' => '45'],
                 45,
                 'Should use seconds from X-RateLimit-Reset header',
+                false,
             ],
             'x-retry-in' => [
                 ['X-Retry-In' => '15'],
                 15,
                 'Should use seconds from X-Retry-In header',
+                false,
             ],
             'prefers-retry-after-over-others' => [
                 [
@@ -82,6 +94,7 @@ class GuzzleResponseStrategyTest extends TestCase
                 ],
                 30,
                 'Should prefer Retry-After over other headers',
+                false,
             ],
         ];
     }

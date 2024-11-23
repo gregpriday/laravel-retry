@@ -178,25 +178,32 @@ class RetryStrategyTest extends TestCase
 
     public function test_rate_limit_strategy_specific_behavior(): void
     {
+        // Reset all rate limiters before starting the test
+        RateLimitStrategy::resetAll();
+
         $strategy = new RateLimitStrategy(
             innerStrategy: new FixedDelayStrategy,
             maxAttempts: 3,
-            timeWindow: 1
+            timeWindow: 1,
+            storageKey: 'test-rate-limit' // Use a unique storage key for this test
         );
 
         // Should allow initial attempts
-        $this->assertTrue($strategy->shouldRetry(0, 5, null));
-        $this->assertTrue($strategy->shouldRetry(1, 5, null));
-        $this->assertTrue($strategy->shouldRetry(2, 5, null));
+        $this->assertTrue($strategy->shouldRetry(0, 5, null), 'First attempt should be allowed');
+        $this->assertTrue($strategy->shouldRetry(1, 5, null), 'Second attempt should be allowed');
+        $this->assertTrue($strategy->shouldRetry(2, 5, null), 'Third attempt should be allowed');
 
         // Should deny further attempts when rate limit is reached
-        $this->assertFalse($strategy->shouldRetry(3, 5, null));
+        $this->assertFalse($strategy->shouldRetry(3, 5, null), 'Fourth attempt should be denied due to rate limit');
 
         // Wait for rate limit window to pass
         sleep(2);
 
         // Should allow attempts again
-        $this->assertTrue($strategy->shouldRetry(0, 5, null));
+        $this->assertTrue($strategy->shouldRetry(0, 5, null), 'New attempt should be allowed after window reset');
+
+        // Clean up
+        $strategy->reset();
     }
 
     public function test_circuit_breaker_strategy_specific_behavior(): void
