@@ -11,12 +11,7 @@
                 "options": {
                     "fail-on-error": true
                 },
-                "conditions": [
-                    {
-                        "exec": "\\CaptainHook\\App\\Hook\\Condition\\FileStaged\\Any",
-                        "args": ["php"]
-                    }
-                ]
+                "conditions": []
             }
         ]
     },
