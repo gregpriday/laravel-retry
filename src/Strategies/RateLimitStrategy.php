@@ -3,25 +3,36 @@
 namespace GregPriday\LaravelRetry\Strategies;
 
 use GregPriday\LaravelRetry\Contracts\RetryStrategy;
-use Illuminate\Support\Facades\Cache;
 use Throwable;
 
 class RateLimitStrategy implements RetryStrategy
 {
+    /**
+     * Internal storage for attempts across instances
+     *
+     * @var array<string, array<array{timestamp: int, window_end: int}>>
+     */
+    private static array $attemptStorage = [];
+
     /**
      * Create a new rate limit strategy.
      *
      * @param RetryStrategy $innerStrategy The wrapped retry strategy
      * @param int $maxAttempts Maximum attempts per time window
      * @param int $timeWindow Time window in seconds
-     * @param string $cachePrefix Prefix for cache keys
+     * @param string $storageKey Unique key for this rate limiter instance
      */
     public function __construct(
         protected RetryStrategy $innerStrategy,
         protected int $maxAttempts = 100,
         protected int $timeWindow = 60,
-        protected string $cachePrefix = 'rate_limit'
-    ) {}
+        protected string $storageKey = 'default'
+    ) {
+        // Initialize storage for this key if it doesn't exist
+        if (!isset(self::$attemptStorage[$this->storageKey])) {
+            self::$attemptStorage[$this->storageKey] = [];
+        }
+    }
 
     /**
      * Calculate the delay for the next retry attempt.
@@ -70,7 +81,7 @@ class RateLimitStrategy implements RetryStrategy
     }
 
     /**
-     * Get the current rate of attempts.
+     * Get the current rate of attempts within the time window.
      */
     protected function getCurrentRate(): int
     {
@@ -83,19 +94,20 @@ class RateLimitStrategy implements RetryStrategy
      */
     protected function recordAttempt(): void
     {
-        $attempts = $this->getAttempts();
-        $attempts[] = time();
-        Cache::put($this->getCacheKey(), $attempts, $this->timeWindow);
+        self::$attemptStorage[$this->storageKey][] = [
+            'timestamp' => time(),
+            'window_end' => time() + $this->timeWindow
+        ];
     }
 
     /**
-     * Get all attempts within the current time window.
+     * Get all valid attempts within the current time window.
      *
-     * @return array<int>
+     * @return array<array{timestamp: int, window_end: int}>
      */
     protected function getAttempts(): array
     {
-        return Cache::get($this->getCacheKey(), []);
+        return self::$attemptStorage[$this->storageKey] ?? [];
     }
 
     /**
@@ -103,25 +115,13 @@ class RateLimitStrategy implements RetryStrategy
      */
     protected function cleanupOldAttempts(): void
     {
-        $attempts = $this->getAttempts();
-        $cutoff = time() - $this->timeWindow;
-
-        $validAttempts = array_filter(
-            $attempts,
-            fn(int $timestamp) => $timestamp > $cutoff
+        $currentTime = time();
+        self::$attemptStorage[$this->storageKey] = array_values(
+            array_filter(
+                self::$attemptStorage[$this->storageKey] ?? [],
+                fn(array $attempt) => $attempt['window_end'] > $currentTime
+            )
         );
-
-        if (count($validAttempts) !== count($attempts)) {
-            Cache::put($this->getCacheKey(), array_values($validAttempts), $this->timeWindow);
-        }
-    }
-
-    /**
-     * Get the cache key for storing attempts.
-     */
-    protected function getCacheKey(): string
-    {
-        return "{$this->cachePrefix}_attempts";
     }
 
     /**
@@ -142,26 +142,43 @@ class RateLimitStrategy implements RetryStrategy
             return 0;
         }
 
-        $oldestAttempt = min($attempts);
-        return max(0, ($oldestAttempt + $this->timeWindow) - time());
+        $currentTime = time();
+        $nextReset = min(
+            array_map(
+                fn(array $attempt) => $attempt['window_end'],
+                $attempts
+            )
+        );
+
+        return max(0, $nextReset - $currentTime);
     }
 
     /**
-     * Reset the rate limiter.
+     * Reset the rate limiter for this storage key.
      */
     public function reset(): void
     {
-        Cache::forget($this->getCacheKey());
+        self::$attemptStorage[$this->storageKey] = [];
     }
 
     /**
-     * Get the current rate limit configuration.
+     * Reset all rate limiters across all storage keys.
+     */
+    public static function resetAll(): void
+    {
+        self::$attemptStorage = [];
+    }
+
+    /**
+     * Get the current rate limit configuration and status.
      *
      * @return array{
      *     max_attempts: int,
      *     time_window: int,
      *     remaining: int,
-     *     reset_in: int
+     *     reset_in: int,
+     *     current_rate: int,
+     *     storage_key: string
      * }
      */
     public function getRateLimitInfo(): array
@@ -170,7 +187,9 @@ class RateLimitStrategy implements RetryStrategy
             'max_attempts' => $this->maxAttempts,
             'time_window' => $this->timeWindow,
             'remaining' => $this->getRemainingAttempts(),
-            'reset_in' => $this->getTimeUntilReset()
+            'reset_in' => $this->getTimeUntilReset(),
+            'current_rate' => $this->getCurrentRate(),
+            'storage_key' => $this->storageKey
         ];
     }
 }
