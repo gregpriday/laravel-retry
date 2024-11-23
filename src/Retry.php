@@ -14,17 +14,17 @@ class Retry
     /**
      * Default maximum number of retries.
      */
-    private const DEFAULT_MAX_RETRIES = 3;
+    private const int DEFAULT_MAX_RETRIES = 3;
 
     /**
      * Default delay between retries in seconds.
      */
-    private const DEFAULT_RETRY_DELAY = 5;
+    private const int DEFAULT_RETRY_DELAY = 5;
 
     /**
      * Default timeout for operations in seconds.
      */
-    private const DEFAULT_TIMEOUT = 30;
+    private const int DEFAULT_TIMEOUT = 30;
 
     /**
      * List of retryable error patterns.
@@ -46,6 +46,18 @@ class Retry
      * @var array<class-string<Throwable>>
      */
     protected array $retryableExceptions = [];
+
+    /**
+     * Collection of exceptions that occurred during retries.
+     *
+     * @var array<array{
+     *    attempt: int,
+     *    exception: Throwable,
+     *    timestamp: int,
+     *    was_retryable: bool
+     * }>
+     */
+    protected array $exceptionHistory = [];
 
     /**
      * Create a new retry instance.
@@ -93,6 +105,7 @@ class Retry
         array $additionalPatterns = [],
         array $additionalExceptions = []
     ): mixed {
+        $this->exceptionHistory = []; // Reset exception history at the start of each run
         $attempt = 0;
         $lastException = null;
         $patterns = [...$this->exceptionManager->getAllPatterns(), ...$additionalPatterns];
@@ -107,8 +120,17 @@ class Retry
                 return $operation();
             } catch (Throwable $e) {
                 $lastException = $e;
+                $isRetryable = $this->isRetryable($e, $patterns, $exceptions);
 
-                if ($this->isRetryable($e, $patterns, $exceptions)) {
+                // Record the exception in the history
+                $this->exceptionHistory[] = [
+                    'attempt'       => $attempt,
+                    'exception'     => $e,
+                    'timestamp'     => time(),
+                    'was_retryable' => $isRetryable,
+                ];
+
+                if ($isRetryable) {
                     $this->handleRetryableError($e, $attempt);
                     $attempt++;
                 } else {
@@ -175,6 +197,37 @@ class Retry
         }
 
         sleep($delay);
+    }
+
+    /**
+     * Get the exception history for the last run.
+     *
+     * @return array<array{
+     *    attempt: int,
+     *    exception: Throwable,
+     *    timestamp: int,
+     *    was_retryable: bool
+     * }>
+     */
+    public function getExceptionHistory(): array
+    {
+        return $this->exceptionHistory;
+    }
+
+    /**
+     * Get the count of exceptions that occurred during the last run.
+     */
+    public function getExceptionCount(): int
+    {
+        return count($this->exceptionHistory);
+    }
+
+    /**
+     * Get the count of retryable exceptions that occurred during the last run.
+     */
+    public function getRetryableExceptionCount(): int
+    {
+        return count(array_filter($this->exceptionHistory, fn ($entry) => $entry['was_retryable']));
     }
 
     /**
