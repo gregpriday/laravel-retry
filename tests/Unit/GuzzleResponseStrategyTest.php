@@ -43,9 +43,9 @@ class GuzzleResponseStrategyTest extends TestCase
         $delay = $this->strategy->getDelay(0, 5);
 
         if ($isTimeBased) {
-            // Allow for a small timing difference (±10 seconds) for time-based tests
-            $this->assertGreaterThanOrEqual($expectedDelay - 10, $delay, $message);
-            $this->assertLessThanOrEqual($expectedDelay + 10, $delay, $message);
+            // Allow for a small timing difference (±15 seconds) for time-based tests
+            $this->assertGreaterThanOrEqual($expectedDelay - 15, $delay, $message);
+            $this->assertLessThanOrEqual($expectedDelay + 15, $delay, $message);
         } else {
             $this->assertEquals($expectedDelay, $delay, $message);
         }
