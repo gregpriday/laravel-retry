@@ -282,18 +282,26 @@ class Retry
             }
         }
 
-        // Then check the standard retry conditions
-        foreach ($exceptions as $exceptionClass) {
-            if ($e instanceof $exceptionClass) {
-                return true;
+        // Check the exception and all previous exceptions in the chain
+        $current = $e;
+        while ($current !== null) {
+            // Check if this exception matches any of the retryable exception classes
+            foreach ($exceptions as $exceptionClass) {
+                if ($current instanceof $exceptionClass) {
+                    return true;
+                }
             }
-        }
 
-        $message = $e->getMessage();
-        foreach ($patterns as $pattern) {
-            if (preg_match($pattern, $message)) {
-                return true;
+            // Check if the exception message matches any of the retryable patterns
+            $message = $current->getMessage();
+            foreach ($patterns as $pattern) {
+                if (preg_match($pattern, $message)) {
+                    return true;
+                }
             }
+
+            // Move to the previous exception in the chain
+            $current = $current->getPrevious();
         }
 
         return false;
