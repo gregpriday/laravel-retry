@@ -25,6 +25,12 @@ A robust and flexible retry mechanism for Laravel applications that provides a p
     - Built-in support for Guzzle exceptions
     - Custom error pattern matching
 
+- **Observability & Instrumentation**
+    - Event dispatching at key retry lifecycle points
+    - Monitor retry attempts, successes, and failures
+    - Easy integration with monitoring systems
+    - Custom event callbacks for fine-grained control
+
 - **Comprehensive Configuration**
     - Configurable retry attempts
     - Adjustable delays and timeouts
@@ -268,6 +274,116 @@ $history = $result->getExceptionHistory();
 ```
 
 # Laravel Retry - Advanced Usage
+
+## Observability & Instrumentation
+
+### Event System
+
+The package dispatches Laravel events at key points in the retry lifecycle, allowing you to monitor and log retry behavior:
+
+```php
+use GregPriday\LaravelRetry\Events\RetryingOperationEvent;
+use GregPriday\LaravelRetry\Events\OperationSucceededEvent;
+use GregPriday\LaravelRetry\Events\OperationFailedEvent;
+
+// In your EventServiceProvider or elsewhere:
+protected $listen = [
+    RetryingOperationEvent::class => [
+        MyRetryingOperationListener::class,
+    ],
+    OperationSucceededEvent::class => [
+        MyOperationSucceededListener::class,
+    ],
+    OperationFailedEvent::class => [
+        MyOperationFailedListener::class,
+        NotifyAdminAboutFailedOperation::class,
+    ],
+];
+```
+
+### Available Events
+
+- **RetryingOperationEvent**
+  - Dispatched before each retry attempt
+  - Payload: `attempt`, `maxRetries`, `delay`, `exception`, `timestamp`
+
+- **OperationSucceededEvent**
+  - Dispatched when an operation succeeds
+  - Payload: `attempt`, `result`, `totalTime`, `timestamp`
+
+- **OperationFailedEvent**
+  - Dispatched when all retry attempts are exhausted
+  - Payload: `attempt`, `error`, `exceptionHistory`, `timestamp`
+
+### Event Callbacks
+
+For simpler use cases, you can use the callback approach instead of Laravel's event system:
+
+```php
+Retry::make()
+    ->withEventCallbacks([
+        'onRetry' => function (RetryingOperationEvent $event) {
+            Log::info('Retrying operation', [
+                'attempt' => $event->attempt,
+                'exception' => $event->exception->getMessage(),
+                'delay' => $event->delay,
+            ]);
+        },
+        'onSuccess' => function (OperationSucceededEvent $event) {
+            Log::info('Operation succeeded', [
+                'attempts' => $event->attempt,
+                'totalTime' => $event->totalTime,
+            ]);
+        },
+        'onFailure' => function (OperationFailedEvent $event) {
+            Log::error('Operation failed after multiple attempts', [
+                'attempts' => $event->attempt,
+                'error' => $event->error->getMessage(),
+            ]);
+            
+            // Send notification or alert
+            Notification::route('slack', config('slack.webhook'))
+                ->notify(new OperationFailureNotification($event));
+        },
+    ])
+    ->run(fn() => riskyOperation());
+```
+
+### Configuration
+
+Event dispatching can be enabled or disabled via configuration:
+
+```php
+// config/retry.php
+return [
+    // ... other config
+    
+    'dispatch_events' => env('RETRY_DISPATCH_EVENTS', true),
+];
+```
+
+### Integrating with Monitoring Systems
+
+You can use the event system to integrate with popular monitoring systems:
+
+```php
+// Example integration with a monitoring system
+Event::listen(RetryingOperationEvent::class, function ($event) {
+    app('monitoring')->incrementCounter('retry_attempts', [
+        'operation' => 'api_call',
+    ]);
+});
+
+Event::listen(OperationFailedEvent::class, function ($event) {
+    app('monitoring')->incrementCounter('retry_failures', [
+        'operation' => 'api_call',
+    ]);
+    
+    if ($event->attempt >= 3) {
+        app('monitoring')->triggerAlert('High retry count detected');
+    }
+});
+```
 
 ## Exception Handling System
 

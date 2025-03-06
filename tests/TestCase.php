@@ -10,6 +10,11 @@ use Mockery;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
 use RuntimeException;
 
+// Define a constant to indicate we're running in PHPUnit
+if (! defined('PHPUNIT_RUNNING')) {
+    define('PHPUNIT_RUNNING', true);
+}
+
 abstract class TestCase extends OrchestraTestCase
 {
     protected Retry $retry;

@@ -38,6 +38,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Event Dispatching
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, the package will dispatch Laravel events at key points
+    | in the retry lifecycle (before retry, on success, on failure).
+    |
+    | This can be used for monitoring, logging, or alerting.
+    |
+    */
+    'dispatch_events' => env('RETRY_DISPATCH_EVENTS', true),
+
+    /*
+    |--------------------------------------------------------------------------
     | Handler Paths
     |--------------------------------------------------------------------------
     |

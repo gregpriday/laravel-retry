@@ -4,8 +4,12 @@ namespace GregPriday\LaravelRetry;
 
 use Closure;
 use GregPriday\LaravelRetry\Contracts\RetryStrategy;
+use GregPriday\LaravelRetry\Events\OperationFailedEvent;
+use GregPriday\LaravelRetry\Events\OperationSucceededEvent;
+use GregPriday\LaravelRetry\Events\RetryingOperationEvent;
 use GregPriday\LaravelRetry\Exceptions\ExceptionHandlerManager;
 use GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy;
+use Illuminate\Support\Facades\Event;
 use RuntimeException;
 use Throwable;
 
@@ -72,6 +76,18 @@ class Retry
     protected ?Closure $retryCondition = null;
 
     /**
+     * Custom event callbacks for retry lifecycle events.
+     *
+     * @var array<string, Closure>
+     */
+    protected array $eventCallbacks = [];
+
+    /**
+     * Time when the operation started.
+     */
+    protected ?float $startTime = null;
+
+    /**
      * Create a new retry instance.
      */
     public function __construct(
@@ -88,6 +104,13 @@ class Retry
         $this->exceptionManager = $exceptionManager ?? new ExceptionHandlerManager;
         $this->strategy = $strategy ?? new ExponentialBackoffStrategy;
         $this->exceptionManager->registerDefaultHandlers();
+
+        // Initialize the event callbacks array
+        $this->eventCallbacks = [
+            'onRetry'   => null,
+            'onSuccess' => null,
+            'onFailure' => null,
+        ];
     }
 
     /**
@@ -173,6 +196,7 @@ class Retry
         $lastException = null;
         $patterns = [...$this->exceptionManager->getAllPatterns(), ...$additionalPatterns];
         $exceptions = [...$this->exceptionManager->getAllExceptions(), ...$additionalExceptions];
+        $this->startTime = microtime(true);
 
         while ($this->strategy->shouldRetry($attempt, $this->maxRetries, $lastException)) {
             try {
@@ -181,6 +205,10 @@ class Retry
                 }
 
                 $result = $operation();
+                $totalTime = microtime(true) - $this->startTime;
+
+                // Dispatch success event
+                $this->dispatchOperationSucceededEvent($attempt, $result, $totalTime);
 
                 return new RetryResult(
                     result: $result,
@@ -200,9 +228,16 @@ class Retry
                 ];
 
                 if ($isRetryable) {
+                    // Explicitly dispatch retry event before handling the error
+                    $this->dispatchRetryingOperationEvent($attempt + 1, $this->strategy->getDelay($attempt, $this->retryDelay), $e);
+
+                    // Then handle the retryable error (which includes sleeping if needed)
                     $this->handleRetryableError($e, $attempt);
                     $attempt++;
                 } else {
+                    // Dispatch failure event for non-retryable exception
+                    $this->dispatchOperationFailedEvent($attempt, $e);
+
                     return new RetryResult(
                         result: null,
                         error: $e,
@@ -211,6 +246,12 @@ class Retry
                 }
             }
         }
+
+        // Dispatch failure event after all retries exhausted
+        $this->dispatchOperationFailedEvent(
+            $attempt,
+            $lastException ?? new RuntimeException("Operation failed after {$this->maxRetries} attempts")
+        );
 
         return new RetryResult(
             result: null,
@@ -286,7 +327,10 @@ class Retry
             ($this->progressCallback)($message);
         }
 
-        sleep($delay);
+        // Only sleep if delay is positive (important for tests that set delay to 0)
+        if ($delay > 0) {
+            sleep($delay);
+        }
     }
 
     /**
@@ -398,5 +442,92 @@ class Retry
     public function getExceptionManager(): ExceptionHandlerManager
     {
         return $this->exceptionManager;
+    }
+
+    /**
+     * Set custom event callbacks for retry lifecycle events.
+     *
+     * @param  array<string, Closure>  $callbacks  Array of callbacks for 'onRetry', 'onSuccess', and 'onFailure'
+     */
+    public function withEventCallbacks(array $callbacks): self
+    {
+        // Merge with existing callbacks rather than replacing
+        foreach ($callbacks as $key => $callback) {
+            if (in_array($key, ['onRetry', 'onSuccess', 'onFailure'])) {
+                $this->eventCallbacks[$key] = $callback;
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * Dispatch the RetryingOperationEvent.
+     */
+    protected function dispatchRetryingOperationEvent(int $attempt, int $delay, Throwable $exception): void
+    {
+        if (config('retry.dispatch_events', true)) {
+            $event = new RetryingOperationEvent(
+                attempt: $attempt,
+                maxRetries: $this->maxRetries,
+                delay: $delay,
+                exception: $exception,
+                timestamp: time()
+            );
+
+            // Call the onRetry callback if it exists
+            if (isset($this->eventCallbacks['onRetry']) && is_callable($this->eventCallbacks['onRetry'])) {
+                call_user_func($this->eventCallbacks['onRetry'], $event);
+            }
+
+            // Use Laravel Event facade to ensure events are caught by Event::fake in tests
+            Event::dispatch($event);
+        }
+    }
+
+    /**
+     * Dispatch the OperationSucceededEvent.
+     */
+    protected function dispatchOperationSucceededEvent(int $attempt, mixed $result, float $totalTime): void
+    {
+        if (config('retry.dispatch_events', true)) {
+            $event = new OperationSucceededEvent(
+                attempt: $attempt,
+                result: $result,
+                totalTime: $totalTime,
+                timestamp: time()
+            );
+
+            // Call the onSuccess callback if it exists
+            if (isset($this->eventCallbacks['onSuccess']) && is_callable($this->eventCallbacks['onSuccess'])) {
+                call_user_func($this->eventCallbacks['onSuccess'], $event);
+            }
+
+            // Use Laravel Event facade to ensure events are caught by Event::fake in tests
+            Event::dispatch($event);
+        }
+    }
+
+    /**
+     * Dispatch the OperationFailedEvent.
+     */
+    protected function dispatchOperationFailedEvent(int $attempt, ?Throwable $error): void
+    {
+        if (config('retry.dispatch_events', true)) {
+            $event = new OperationFailedEvent(
+                attempt: $attempt,
+                error: $error,
+                exceptionHistory: $this->exceptionHistory,
+                timestamp: time()
+            );
+
+            // Call the onFailure callback if it exists
+            if (isset($this->eventCallbacks['onFailure']) && is_callable($this->eventCallbacks['onFailure'])) {
+                call_user_func($this->eventCallbacks['onFailure'], $event);
+            }
+
+            // Use Laravel Event facade to ensure events are caught by Event::fake in tests
+            Event::dispatch($event);
+        }
     }
 }
