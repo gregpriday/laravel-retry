@@ -7,11 +7,11 @@ use Throwable;
 
 class CircuitBreakerStrategy implements RetryStrategy
 {
-    private const CIRCUIT_OPEN = 'open';
+    private const string CIRCUIT_OPEN = 'open';
 
-    private const CIRCUIT_CLOSED = 'closed';
+    private const string CIRCUIT_CLOSED = 'closed';
 
-    private const CIRCUIT_HALF_OPEN = 'half-open';
+    private const string CIRCUIT_HALF_OPEN = 'half-open';
 
     private string $state = self::CIRCUIT_CLOSED;
 

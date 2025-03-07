@@ -1,6 +1,6 @@
 # Laravel Retry
 
-A robust and flexible retry mechanism for Laravel applications that provides a powerful way to handle transient failures. This package helps you handle temporary failures in HTTP requests, database queries, API calls, and any other potentially unstable operations.
+A robust and flexible retry mechanism for Laravel applications to handle transient failures in HTTP requests, database queries, API calls, and any other potentially unstable operations. The package provides a host of powerful features to automate and customize retry logic in your application.
 
 ## Features
 
@@ -31,34 +31,46 @@ A robust and flexible retry mechanism for Laravel applications that provides a p
     - Easy integration with monitoring systems
     - Custom event callbacks for fine-grained control
 
+- **Pipeline Integration**
+    - Retryable Pipeline for complex operation chains
+    - Pipe-specific retry settings
+    - Progress tracking during pipeline execution
+
 - **Comprehensive Configuration**
     - Configurable retry attempts
     - Adjustable delays and timeouts
-    - Progress tracking and logging
     - Custom retry conditions
+    - Progress tracking and logging hooks
+
+---
 
 ## Installation
 
-You can install the package via Composer:
+Install the package via Composer:
 
 ```bash
 composer require gregpriday/laravel-retry
 ```
 
-After installation, you can publish the configuration file:
+Then publish the configuration file:
 
 ```bash
 php artisan vendor:publish --tag="retry-config"
 ```
 
+This publishes a `config/retry.php` file where you can adjust package-specific settings.
+
+---
+
 ## Basic Usage
 
-### Simple Retry Operation
+### 1. Simple Retry Operation
 
 ```php
 use GregPriday\LaravelRetry\Facades\Retry;
 
 $result = Retry::run(function () {
+    // Potentially flaky operation, e.g. an API call
     return Http::get('https://api.example.com/data');
 })->then(function ($response) {
     // Handle successful response
@@ -70,7 +82,15 @@ $result = Retry::run(function () {
 });
 ```
 
-### Using Dependency Injection
+In this example:
+
+- **`run()`** initiates a retryable operation.
+- **`then()`** runs if all retries succeed.
+- **`catch()`** runs if the operation ultimately fails after exhausting retries.
+
+---
+
+### 2. Using Dependency Injection
 
 ```php
 use GregPriday\LaravelRetry\Retry;
@@ -87,32 +107,47 @@ class ApiService
             ->maxRetries(5)
             ->retryDelay(1)
             ->run(fn() => Http::get('https://api.example.com/data'))
-            ->value();
+            ->value(); // Throws on error; returns successful value otherwise
     }
 }
 ```
 
-### Configuring Retry Behavior
+You can inject the `Retry` service anywhere in your Laravel application. This lets you configure and run retries easily within any class or service.
+
+---
+
+### 3. Configuring Retry Behavior
 
 ```php
 Retry::make()
     ->maxRetries(5)                    // Maximum retry attempts
-    ->retryDelay(2)                    // Base delay in seconds
-    ->timeout(30)                      // Timeout per attempt
+    ->retryDelay(2)                    // Base delay in seconds between attempts
+    ->timeout(30)                      // Timeout per attempt (in seconds)
     ->withProgress(function ($message) {
-        Log::info($message);           // Track progress
+        // Optional: track progress or log messages
+        Log::info($message);
     })
     ->run(function () {
         return DB::table('users')->get();
     });
 ```
 
-### Custom Retry Conditions
+- **`maxRetries()`**: Max number of attempts.
+- **`retryDelay()`**: Base delay between attempts (many strategies will grow this delay over time).
+- **`timeout()`**: How long each operation attempt is allowed to run.
+- **`withProgress()`**: Callback triggered on each failed attempt before retrying.
+
+---
+
+### 4. Custom Retry Conditions
+
+You can define your own condition logic to decide if a given exception is retryable:
 
 ```php
+// Example 1: Use retryIf
 Retry::make()
     ->retryIf(function (Throwable $e, array $context) {
-        // Retry on rate limit errors if we have attempts remaining
+        // Only retry for RateLimitException if attempts remain
         return $e instanceof RateLimitException && 
                $context['remaining_attempts'] > 0;
     })
@@ -120,10 +155,10 @@ Retry::make()
         return $api->fetch();
     });
 
-// Or use retryUnless for inverse conditions
+// Example 2: Use retryUnless
 Retry::make()
     ->retryUnless(function (Throwable $e, array $context) {
-        // Don't retry if we've seen too many of the same error
+        // Do not retry if we've seen the same error multiple times
         return $context['attempt'] >= 2;
     })
     ->run(function () {
@@ -131,11 +166,15 @@ Retry::make()
     });
 ```
 
+`$context` includes information such as `attempt`, `max_retries`, `remaining_attempts`, and `exception_history`.
+
+---
+
 ## Retry Strategies
 
-The package includes several retry strategies to handle different scenarios:
+`laravel-retry` supports multiple strategies out of the box:
 
-### Exponential Backoff (Default)
+### 1. Exponential Backoff (Default)
 
 Increases delay exponentially between retries:
 
@@ -143,85 +182,85 @@ Increases delay exponentially between retries:
 use GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy;
 
 $strategy = new ExponentialBackoffStrategy(
-    multiplier: 2.0,    // Each delay will be 2x longer
-    maxDelay: 30,       // Maximum delay in seconds
-    withJitter: true    // Add randomness to prevent thundering herd
+    multiplier: 2.0,   // Each subsequent delay = delay * 2
+    maxDelay: 30,      // Max delay in seconds
+    withJitter: true   // Add randomness to reduce thundering herd
 );
 
 Retry::withStrategy($strategy)->run(fn() => doSomething());
 ```
 
-### Linear Backoff
+### 2. Linear Backoff
 
-Increases delay linearly between retries:
+Increases delay linearly:
 
 ```php
 use GregPriday\LaravelRetry\Strategies\LinearBackoffStrategy;
 
 $strategy = new LinearBackoffStrategy(
-    increment: 5,     // Add 5 seconds each retry
-    maxDelay: 30      // Maximum delay in seconds
+    increment: 5,   // Add 5 seconds more each retry
+    maxDelay: 30
 );
 ```
 
-### Fixed Delay
+### 3. Fixed Delay
 
-Uses the same delay between all retries:
+Uses the same delay for all attempts:
 
 ```php
 use GregPriday\LaravelRetry\Strategies\FixedDelayStrategy;
 
 $strategy = new FixedDelayStrategy(
-    withJitter: true,       // Add randomness
-    jitterPercent: 0.2     // ±20% jitter
+    withJitter: true,        // Apply jitter if desired
+    jitterPercent: 0.2       // ±20% jitter
 );
 ```
 
-### Decorrelated Jitter
+### 4. Decorrelated Jitter
 
-Implements AWS's "Exponential Backoff and Jitter" algorithm:
+Implements AWS's "Exponential Backoff and Jitter":
 
 ```php
 use GregPriday\LaravelRetry\Strategies\DecorrelatedJitterStrategy;
 
 $strategy = new DecorrelatedJitterStrategy(
-    maxDelay: 30,       // Maximum delay in seconds
-    minFactor: 1.0,     // Minimum multiplier for base delay
-    maxFactor: 3.0      // Maximum multiplier for base delay
+    maxDelay: 30,    // Maximum delay
+    minFactor: 1.0,  // Minimum multiplier
+    maxFactor: 3.0   // Maximum multiplier
 );
 ```
 
-### Rate Limit Strategy
+### 5. Rate Limit Strategy
 
-Implements rate limiting across multiple retry attempts:
+Limit the total number of retry attempts within a time window:
 
 ```php
 use GregPriday\LaravelRetry\Strategies\RateLimitStrategy;
 
 $strategy = new RateLimitStrategy(
     innerStrategy: new ExponentialBackoffStrategy(),
-    maxAttempts: 100,    // Maximum attempts per time window
-    timeWindow: 60       // Time window in seconds
+    maxAttempts: 100, // Maximum attempts in timeWindow
+    timeWindow: 60    // in seconds
 );
 ```
 
-### Circuit Breaker Strategy
+### 6. Circuit Breaker Strategy
 
-Implements the Circuit Breaker pattern:
+Use the Circuit Breaker pattern to stop retrying after repeated failures:
 
 ```php
 use GregPriday\LaravelRetry\Strategies\CircuitBreakerStrategy;
 
 $strategy = new CircuitBreakerStrategy(
     innerStrategy: new ExponentialBackoffStrategy(),
-    failureThreshold: 5,    // Failures before opening circuit
-    resetTimeout: 60        // Seconds before attempting reset
+    failureThreshold: 5,  // Failures before opening circuit
+    resetTimeout: 60      // Wait time (seconds) before half-open attempt
 );
 ```
 
 ### Combining Strategies
 
-Strategies can be combined for complex scenarios:
+You can nest or chain strategies for complex scenarios:
 
 ```php
 $rateLimit = new RateLimitStrategy(
@@ -239,54 +278,63 @@ $circuitBreaker = new CircuitBreakerStrategy(
 Retry::withStrategy($circuitBreaker)->run(fn() => doSomething());
 ```
 
+---
+
 ## Result Handling
 
-The package provides a promise-like interface for handling results:
+Every retry operation returns a `RetryResult`, which you can handle in a promise-like style:
 
 ```php
 $result = Retry::run(fn() => riskyOperation())
-    ->then(function($value) {
+    ->then(function ($value) {
         // Handle success
         return processValue($value);
     })
-    ->catch(function(Throwable $e) {
+    ->catch(function (Throwable $e) {
         // Handle failure
         Log::error('Operation failed', ['error' => $e]);
         return fallbackValue();
     })
-    ->finally(function() {
+    ->finally(function () {
         // Always runs
         cleanup();
     });
 
-// Access the final value (throws on error)
-$value = $result->value();
-
-// Or handle success/failure states explicitly
-if ($result->succeeded()) {
-    $value = $result->getResult();
-} else {
-    $error = $result->getError();
-}
-
-// Access retry history
-$history = $result->getExceptionHistory();
+// Retrieve the final value or throw an exception
+$value = $result->value(); // throws on error
 ```
 
-# Laravel Retry - Advanced Usage
+Alternatively, you can handle it more manually:
+
+```php
+if ($result->succeeded()) {
+    // success path
+    $value = $result->getResult();
+} else {
+    // failure path
+    $error = $result->getError();
+}
+```
+
+You can also inspect the entire **exception history** via `$result->getExceptionHistory()`.
+
+---
+
+# Advanced Usage
 
 ## Observability & Instrumentation
 
 ### Event System
 
-The package dispatches Laravel events at key points in the retry lifecycle, allowing you to monitor and log retry behavior:
+To facilitate monitoring and analytics, the package fires Laravel events at key points:
+
+- `RetryingOperationEvent` – before each retry attempt
+- `OperationSucceededEvent` – after a successful operation
+- `OperationFailedEvent` – after retries are exhausted
+
+Register these events in your **EventServiceProvider**:
 
 ```php
-use GregPriday\LaravelRetry\Events\RetryingOperationEvent;
-use GregPriday\LaravelRetry\Events\OperationSucceededEvent;
-use GregPriday\LaravelRetry\Events\OperationFailedEvent;
-
-// In your EventServiceProvider or elsewhere:
 protected $listen = [
     RetryingOperationEvent::class => [
         MyRetryingOperationListener::class,
@@ -296,110 +344,57 @@ protected $listen = [
     ],
     OperationFailedEvent::class => [
         MyOperationFailedListener::class,
-        NotifyAdminAboutFailedOperation::class,
     ],
 ];
 ```
 
-### Available Events
+You can also enable/disable event dispatching in `config/retry.php`:
 
-- **RetryingOperationEvent**
-  - Dispatched before each retry attempt
-  - Payload: `attempt`, `maxRetries`, `delay`, `exception`, `timestamp`
+```php
+'dispatch_events' => env('RETRY_DISPATCH_EVENTS', true),
+```
 
-- **OperationSucceededEvent**
-  - Dispatched when an operation succeeds
-  - Payload: `attempt`, `result`, `totalTime`, `timestamp`
+### Event Callbacks (Alternative to Listeners)
 
-- **OperationFailedEvent**
-  - Dispatched when all retry attempts are exhausted
-  - Payload: `attempt`, `error`, `exceptionHistory`, `timestamp`
-
-### Event Callbacks
-
-For simpler use cases, you can use the callback approach instead of Laravel's event system:
+For smaller use cases, pass callbacks:
 
 ```php
 Retry::make()
     ->withEventCallbacks([
         'onRetry' => function (RetryingOperationEvent $event) {
-            Log::info('Retrying operation', [
-                'attempt' => $event->attempt,
-                'exception' => $event->exception->getMessage(),
-                'delay' => $event->delay,
-            ]);
+            // ...
         },
         'onSuccess' => function (OperationSucceededEvent $event) {
-            Log::info('Operation succeeded', [
-                'attempts' => $event->attempt,
-                'totalTime' => $event->totalTime,
-            ]);
+            // ...
         },
         'onFailure' => function (OperationFailedEvent $event) {
-            Log::error('Operation failed after multiple attempts', [
-                'attempts' => $event->attempt,
-                'error' => $event->error->getMessage(),
-            ]);
-            
-            // Send notification or alert
-            Notification::route('slack', config('slack.webhook'))
-                ->notify(new OperationFailureNotification($event));
+            // ...
         },
     ])
     ->run(fn() => riskyOperation());
 ```
 
-### Configuration
+### Monitoring System Integrations
 
-Event dispatching can be enabled or disabled via configuration:
-
-```php
-// config/retry.php
-return [
-    // ... other config
-    
-    'dispatch_events' => env('RETRY_DISPATCH_EVENTS', true),
-];
-```
-
-### Integrating with Monitoring Systems
-
-You can use the event system to integrate with popular monitoring systems:
+You can hook into the events to push metrics to services like Datadog, Prometheus, etc.:
 
 ```php
-// Example integration with a monitoring system
 Event::listen(RetryingOperationEvent::class, function ($event) {
-    app('monitoring')->incrementCounter('retry_attempts', [
-        'operation' => 'api_call',
-    ]);
-});
-
-Event::listen(OperationFailedEvent::class, function ($event) {
-    app('monitoring')->incrementCounter('retry_failures', [
-        'operation' => 'api_call',
-    ]);
-    
-    if ($event->attempt >= 3) {
-        app('monitoring')->triggerAlert('High retry count detected');
-    }
+    app('monitoring')->incrementCounter('retry_attempts');
 });
 ```
+
+---
 
 ## Exception Handling System
 
-### Built-in Exception Handlers
+### Built-in Handlers
 
-The package includes built-in handlers for common exceptions:
-- Network timeouts
-- Connection errors
-- Rate limiting
-- Server errors
-- SSL/TLS issues
-- Temporary unavailability
+By default, `laravel-retry` includes handlers for common transient errors (e.g., Guzzle timeouts, server errors, SSL errors, etc.). The package auto-detects these if the relevant libraries are installed.
 
-### Custom Exception Handlers
+### Custom Handlers
 
-Create custom handlers by extending the `BaseHandler` class:
+You can extend `BaseHandler` to match specific patterns, exceptions, or frameworks:
 
 ```php
 use GregPriday\LaravelRetry\Exceptions\Handlers\BaseHandler;
@@ -426,17 +421,15 @@ class CustomDatabaseHandler extends BaseHandler
 
     public function isApplicable(): bool
     {
+        // Return true if the environment supports this handler
         return true;
     }
 }
 ```
 
-Register custom handlers:
+Then register it in your **AppServiceProvider** or a dedicated service provider:
 
 ```php
-// In a service provider
-use GregPriday\LaravelRetry\Exceptions\ExceptionHandlerManager;
-
 public function boot(ExceptionHandlerManager $manager)
 {
     $manager->registerHandler(new CustomDatabaseHandler());
@@ -445,26 +438,26 @@ public function boot(ExceptionHandlerManager $manager)
 
 ### Exception History
 
-Track and analyze retry attempts:
+For debugging or analytics, the retry result keeps a log of every exception:
 
 ```php
 $result = Retry::run(fn() => riskyOperation());
 
 foreach ($result->getExceptionHistory() as $entry) {
-    Log::info('Retry attempt details', [
+    Log::info('Attempt details', [
         'attempt' => $entry['attempt'],
-        'exception' => $entry['exception']->getMessage(),
+        'message' => $entry['exception']->getMessage(),
         'timestamp' => $entry['timestamp'],
-        'was_retryable' => $entry['was_retryable']
+        'was_retryable' => $entry['was_retryable'],
     ]);
 }
 ```
 
+---
+
 ## Testing & Debugging
 
-### Testing Retry Logic
-
-The package is designed for easy testing:
+Testing retry scenarios is straightforward. For example, in a PHPUnit test:
 
 ```php
 use GregPriday\LaravelRetry\Tests\TestCase;
@@ -474,7 +467,7 @@ class MyServiceTest extends TestCase
     public function test_it_retries_failed_operations()
     {
         $counter = 0;
-        
+
         $result = $this->retry
             ->maxRetries(3)
             ->run(function() use (&$counter) {
@@ -492,207 +485,129 @@ class MyServiceTest extends TestCase
 }
 ```
 
-### Debugging Tools
+Because `laravel-retry` is designed for easy configuration and standard Laravel testing practices, you can mock or fake timeouts as needed.
 
-Monitor retry operations:
+---
+
+## RetryablePipeline
+
+### Overview
+
+`RetryablePipeline` extends Laravel’s `Pipeline` class, adding retry logic around each pipe. This is ideal for multi-step workflows where each step (pipe) can fail with transient issues. Instead of the entire pipeline failing at the first error, each pipe is retried according to your settings.
+
+### 1. Basic Usage
 
 ```php
-Retry::make()
-    ->withProgress(function ($message) {
-        Log::channel('retry')->info($message);
-        
-        // Or send to monitoring service
-        Monitoring::recordRetryAttempt([
-            'message' => $message,
-            'timestamp' => now()
-        ]);
-    })
-    ->run(fn() => operation());
+use GregPriday\LaravelRetry\Facades\RetryablePipeline;
+
+$result = RetryablePipeline::send($data)
+    ->through([
+        FirstPipe::class,
+        SecondPipe::class,
+        ThirdPipe::class,
+    ])
+    ->then(function ($processedData) {
+        return $processedData;
+    });
 ```
 
-## Advanced Configuration
-
-### Global Configuration
-
-Customize default behavior in `config/retry.php`:
+### 2. Configuring Retry Behavior
 
 ```php
-return [
-    'max_retries' => env('RETRY_MAX_ATTEMPTS', 3),
-    'delay' => env('RETRY_DELAY', 5),
-    'timeout' => env('RETRY_TIMEOUT', 120),
-    'handler_paths' => [
-        app_path('Exceptions/Retry/Handlers')
-    ],
-];
-```
+use GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy;
+use GregPriday\LaravelRetry\Facades\RetryablePipeline;
 
-### Runtime Configuration
-
-Apply configuration per operation:
-
-```php
-Retry::make()
+$result = RetryablePipeline::send($data)
     ->maxRetries(5)
     ->retryDelay(2)
     ->timeout(30)
-    ->withStrategy(new CustomStrategy())
-    ->withProgress($callback)
-    ->retryIf($condition)
-    ->run(fn() => operation());
-```
-
-### Service Container Bindings
-
-Customize the service registration:
-
-```php
-use GregPriday\LaravelRetry\Retry;
-use GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy;
-
-$this->app->bind(Retry::class, function ($app) {
-    return new Retry(
-        maxRetries: 5,
-        retryDelay: 1,
-        timeout: 30,
-        strategy: new ExponentialBackoffStrategy(
-            multiplier: 2.0,
-            maxDelay: 30,
-            withJitter: true
-        )
-    );
-});
-```
-
-## Performance Considerations
-
-### Memory Usage
-
-The package maintains an exception history for each retry operation. For long-running processes or high-frequency retries, consider:
-
-```php
-// Clear exception history between runs if needed
-$retry = Retry::make();
-
-foreach ($items as $item) {
-    $result = $retry->run(fn() => processItem($item));
-    // History is automatically reset on next run
-}
-```
-
-### Timeout Handling
-
-Set appropriate timeouts to prevent long-running operations:
-
-```php
-Retry::make()
-    ->timeout(5)  // Maximum time per attempt
-    ->run(function() {
-        return Http::timeout(3)->get('https://api.example.com');
-    });
-```
-
-## Common Patterns & Best Practices
-
-### Idempotency
-
-Ensure operations are safe to retry:
-
-```php
-Retry::run(function() {
-    return DB::transaction(function() {
-        // Use idempotency keys or check existence
-        if (!Payment::whereReference($ref)->exists()) {
-            return Payment::create([...]);
-        }
-    });
-});
-```
-
-### Rate Limiting
-
-Handle API rate limits:
-
-```php
-$strategy = new RateLimitStrategy(
-    new ExponentialBackoffStrategy(),
-    maxAttempts: 100,
-    timeWindow: 60,
-    storageKey: 'api-client'  // Separate limits per client
-);
-
-Retry::withStrategy($strategy)
-    ->retryIf(function($e) {
-        return $e instanceof RateLimitException;
+    ->withStrategy(new ExponentialBackoffStrategy())
+    ->withProgress(function ($message) {
+        Log::info("Pipeline progress: {$message}");
     })
-    ->run(fn() => apiCall());
+    ->withAdditionalPatterns([
+        '/connection lost/i',
+        '/temporary failure/i'
+    ])
+    ->withAdditionalExceptions([
+        \App\Exceptions\TransientException::class
+    ])
+    ->through([
+        // define your pipes...
+    ])
+    ->then(function ($processedData) {
+        return $processedData;
+    });
 ```
 
-### Circuit Breaking
+- **`maxRetries()`, `retryDelay()`, `timeout()`**: Set pipeline-wide defaults.
+- **`withStrategy()`**: Choose a global retry strategy.
+- **`withProgress()`**: Log progress on failures.
+- **`withAdditionalPatterns()` & `withAdditionalExceptions()`**: Expand which errors are retryable at the pipeline level.
 
-Protect downstream services:
+### 3. Pipe-Specific Retry Settings
+
+Individual pipes can override the pipeline defaults by defining public properties:
 
 ```php
-$circuitBreaker = new CircuitBreakerStrategy(
-    new ExponentialBackoffStrategy(),
-    failureThreshold: 5,
-    resetTimeout: 60
-);
+class ApiRequestPipe
+{
+    public $retryCount = 10;
+    public $retryDelay = 3;
+    public $timeout = 60;
 
-$retry = Retry::make()->withStrategy($circuitBreaker);
+    public $additionalPatterns = [
+        '/rate limit exceeded/i',
+        '/too many requests/i'
+    ];
 
-while (true) {
-    try {
-        $result = $retry->run(fn() => serviceCall());
-        // Process result...
-    } catch (Exception $e) {
-        // Circuit is open, wait before retrying
-        sleep($circuitBreaker->getResetTimeout());
+    public $additionalExceptions = [
+        \App\Exceptions\RateLimitException::class
+    ];
+
+    // Optional: Provide your own strategy
+    public $retryStrategy;
+
+    public function __construct()
+    {
+        $this->retryStrategy = new LinearBackoffStrategy(increment: 5);
+    }
+
+    public function handle($data, $next)
+    {
+        // Potentially failing operation
+        $response = Http::get('https://api.example.com/data');
+        
+        if ($response->failed()) {
+            throw new RuntimeException('API request failed: ' . $response->status());
+        }
+        
+        $data['api_result'] = $response->json();
+        return $next($data);
     }
 }
 ```
 
-## Contributing
+### 4. Combining with Other Retry Features
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+`RetryablePipeline` works seamlessly with:
 
-### Development Setup
+- **Event system** for pipeline retries.
+- **Custom exception handlers**.
+- **Any configured retry strategy**.
+- **Progress callbacks**.
 
-1. Clone the repository
-2. Install dependencies:
-```bash
-composer install
-```
+This allows you to build highly robust, multi-step processes that recover gracefully from transient errors in each step.
 
-### Running Tests
+---
 
-```bash
-composer test
-```
+## Contributing & Support
 
-Style fixing:
-```bash
-composer format
-```
+- **Issues**: Please open issues on GitHub if you encounter bugs or need further help.
+- **Pull Requests**: Contributions are welcome! Submit a PR for any improvements, bug fixes, or new features.
 
-### Submitting Changes
+We hope **Laravel Retry** helps you build more resilient applications!
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+---
 
-## License
-
-The MIT License (MIT). Please see [License File](LICENSE.md) for more information.
-
-## Support
-
-- For bugs and features, use the [GitHub issue tracker](../../issues)
-- Feel free to [email me](mailto:greg@siteorigin.com).
-
-## Credits
-
-- [Greg Priday](https://github.com/gregpriday)
-- [All Contributors](../../contributors)
+**Thank you for using Laravel Retry!** If you have any questions, comments, or suggestions, feel free to open an issue or contribute on GitHub.

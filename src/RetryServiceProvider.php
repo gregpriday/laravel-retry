@@ -3,6 +3,7 @@
 namespace GregPriday\LaravelRetry;
 
 use GregPriday\LaravelRetry\Exceptions\ExceptionHandlerManager;
+use GregPriday\LaravelRetry\Pipeline\RetryablePipeline;
 use GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy;
 use Illuminate\Support\ServiceProvider;
 
@@ -37,8 +38,14 @@ class RetryServiceProvider extends ServiceProvider
             );
         });
 
+        // Register the RetryablePipeline
+        $this->app->bind(RetryablePipeline::class, function ($app) {
+            return new RetryablePipeline($app);
+        });
+
         // Register the facade accessor
         $this->app->alias(Retry::class, 'retry');
+        $this->app->alias(RetryablePipeline::class, 'retryable-pipeline');
     }
 
     /**
@@ -68,7 +75,9 @@ class RetryServiceProvider extends ServiceProvider
         return [
             Retry::class,
             ExceptionHandlerManager::class,
+            RetryablePipeline::class,
             'retry',
+            'retryable-pipeline',
         ];
     }
 }
