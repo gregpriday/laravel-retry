@@ -17,8 +17,6 @@
     "orchestra/testbench": "^8.0|^9.0",
     "phpunit/phpunit": "^10.0",
     "laravel/pint": "^1.0",
-    "captainhook/captainhook": "*",
-    "captainhook/hook-installer": "^1.0",
     "mikey179/vfsstream": "^1.6"
   },
   "autoload": {
