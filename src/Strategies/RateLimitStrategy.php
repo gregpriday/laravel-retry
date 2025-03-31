@@ -3,17 +3,11 @@
 namespace GregPriday\LaravelRetry\Strategies;
 
 use GregPriday\LaravelRetry\Contracts\RetryStrategy;
+use Illuminate\Support\Facades\RateLimiter;
 use Throwable;
 
 class RateLimitStrategy implements RetryStrategy
 {
-    /**
-     * Internal storage for attempts across instances
-     *
-     * @var array<string, array<array{timestamp: int, window_end: int}>>
-     */
-    private static array $attemptStorage = [];
-
     /**
      * Create a new rate limit strategy.
      *
@@ -28,10 +22,7 @@ class RateLimitStrategy implements RetryStrategy
         protected int $timeWindow = 60,
         protected string $storageKey = 'default'
     ) {
-        // Initialize storage for this key if it doesn't exist
-        if (! isset(self::$attemptStorage[$this->storageKey])) {
-            self::$attemptStorage[$this->storageKey] = [];
-        }
+        // We'll use Laravel's RateLimiter instead of static storage
     }
 
     /**
@@ -54,6 +45,12 @@ class RateLimitStrategy implements RetryStrategy
             $baseDelay += $additionalDelay;
         }
 
+        // If rate limited, ensure the delay is at least the time until reset
+        $availableIn = RateLimiter::availableIn($this->storageKey);
+        if ($availableIn > 0) {
+            return (int) max($baseDelay, $availableIn);
+        }
+
         return $baseDelay;
     }
 
@@ -70,16 +67,20 @@ class RateLimitStrategy implements RetryStrategy
             return false;
         }
 
-        $currentRate = $this->getCurrentRate();
-
-        // Only record the attempt if we're actually going to allow it
-        if ($currentRate < $this->maxAttempts) {
-            $this->recordAttempt();
-
-            return true;
+        // If max attempts is 0, never allow retries
+        if ($this->maxAttempts <= 0) {
+            return false;
         }
 
-        return false;
+        // Check rate limit using Laravel's RateLimiter
+        if (RateLimiter::tooManyAttempts($this->storageKey, $this->maxAttempts)) {
+            return false;
+        }
+
+        // Record the attempt using Laravel's RateLimiter
+        RateLimiter::hit($this->storageKey, $this->timeWindow);
+
+        return true;
     }
 
     /**
@@ -87,44 +88,7 @@ class RateLimitStrategy implements RetryStrategy
      */
     protected function getCurrentRate(): int
     {
-        $this->cleanupOldAttempts();
-
-        return count($this->getAttempts());
-    }
-
-    /**
-     * Record a new attempt.
-     */
-    protected function recordAttempt(): void
-    {
-        self::$attemptStorage[$this->storageKey][] = [
-            'timestamp'  => time(),
-            'window_end' => time() + $this->timeWindow,
-        ];
-    }
-
-    /**
-     * Get all valid attempts within the current time window.
-     *
-     * @return array<array{timestamp: int, window_end: int}>
-     */
-    protected function getAttempts(): array
-    {
-        return self::$attemptStorage[$this->storageKey] ?? [];
-    }
-
-    /**
-     * Remove attempts outside the current time window.
-     */
-    protected function cleanupOldAttempts(): void
-    {
-        $currentTime = time();
-        self::$attemptStorage[$this->storageKey] = array_values(
-            array_filter(
-                self::$attemptStorage[$this->storageKey] ?? [],
-                fn (array $attempt) => $attempt['window_end'] > $currentTime
-            )
-        );
+        return $this->maxAttempts - $this->getRemainingAttempts();
     }
 
     /**
@@ -132,7 +96,7 @@ class RateLimitStrategy implements RetryStrategy
      */
     public function getRemainingAttempts(): int
     {
-        return max(0, $this->maxAttempts - $this->getCurrentRate());
+        return RateLimiter::remaining($this->storageKey, $this->maxAttempts);
     }
 
     /**
@@ -140,20 +104,11 @@ class RateLimitStrategy implements RetryStrategy
      */
     public function getTimeUntilReset(): int
     {
-        $attempts = $this->getAttempts();
-        if (empty($attempts)) {
-            return 0;
+        if (RateLimiter::tooManyAttempts($this->storageKey, $this->maxAttempts)) {
+            return RateLimiter::availableIn($this->storageKey);
         }
 
-        $currentTime = time();
-        $nextReset = min(
-            array_map(
-                fn (array $attempt) => $attempt['window_end'],
-                $attempts
-            )
-        );
-
-        return max(0, $nextReset - $currentTime);
+        return 0;
     }
 
     /**
@@ -161,15 +116,21 @@ class RateLimitStrategy implements RetryStrategy
      */
     public function reset(): void
     {
-        self::$attemptStorage[$this->storageKey] = [];
+        RateLimiter::clear($this->storageKey);
     }
 
     /**
      * Reset all rate limiters across all storage keys.
+     *
+     * Note: This is not possible with Laravel's RateLimiter in the same way as the static storage.
+     * It would require knowledge of all keys used, which isn't tracked. This method is kept
+     * for API compatibility but will only reset the default key.
      */
     public static function resetAll(): void
     {
-        self::$attemptStorage = [];
+        // Since we can't know all keys used with Laravel's RateLimiter, we can only reset
+        // the default key for backward compatibility
+        RateLimiter::clear('default');
     }
 
     /**

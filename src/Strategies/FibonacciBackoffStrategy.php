@@ -31,7 +31,7 @@ class FibonacciBackoffStrategy implements RetryStrategy
         // For attempt 0, we use 1 * baseDelay
         // For attempt 1, we use 1 * baseDelay
         // For attempt 2, we use 2 * baseDelay, and so on
-        
+
         $fibNumber = $this->fibonacci($attempt + 1);
         $delay = $baseDelay * $fibNumber;
 
@@ -57,28 +57,28 @@ class FibonacciBackoffStrategy implements RetryStrategy
         if ($n <= 0) {
             return 0;
         }
-        
+
         if ($n <= 2) {
             return 1;
         }
-        
+
         // Safety check for very large attempt numbers
         // Fibonacci grows exponentially, so we cap at a reasonable limit
         if ($n > 70) {
             // Return a large but safe number (avoid PHP_INT_MAX to prevent overflow when multiplied)
             return 1000000000; // 1 billion
         }
-        
+
         $a = 1; // First Fibonacci number
         $b = 1; // Second Fibonacci number
-        
+
         // Calculate Fibonacci number iteratively to avoid recursion overhead
         for ($i = 3; $i <= $n; $i++) {
             $c = $a + $b;
             $a = $b;
             $b = $c;
         }
-        
+
         return $b;
     }
 
@@ -105,4 +105,4 @@ class FibonacciBackoffStrategy implements RetryStrategy
     {
         return $attempt < $maxAttempts;
     }
-} 
+}

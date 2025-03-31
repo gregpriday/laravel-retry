@@ -16,7 +16,7 @@ class RateLimitStrategyTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         // Clear rate limiter before each test
         RateLimiter::clear('test_rate_limit_persistence');
         RateLimiter::clear('key1');
@@ -210,7 +210,7 @@ class RateLimitStrategyTest extends TestCase
         // Clean up
         RateLimiter::clear('test_large');
     }
-    
+
     /**
      * Test the rate limit info method.
      */
@@ -220,31 +220,31 @@ class RateLimitStrategyTest extends TestCase
         $innerStrategy = Mockery::mock(RetryStrategy::class);
         $innerStrategy->shouldReceive('shouldRetry')->andReturn(true);
         $innerStrategy->shouldReceive('getDelay')->andReturn(0);
-        
+
         $storageKey = 'test_rate_limit_info';
         $maxAttempts = 5;
         $timeWindow = 60;
-        
+
         $limiter = new RateLimitStrategy(
             $innerStrategy,
             maxAttempts: $maxAttempts,
             timeWindow: $timeWindow,
             storageKey: $storageKey
         );
-        
+
         // Make some attempts
         $limiter->shouldRetry(0, 5, null);
         $limiter->shouldRetry(0, 5, null);
-        
+
         // Check the info
         $info = $limiter->getRateLimitInfo();
-        
+
         $this->assertEquals($maxAttempts, $info['max_attempts']);
         $this->assertEquals($timeWindow, $info['time_window']);
         $this->assertEquals($storageKey, $info['storage_key']);
         $this->assertEquals(3, $info['remaining']); // 5 max - 2 attempts = 3 remaining
         $this->assertEquals(2, $info['current_rate']); // 2 attempts made
-        
+
         // Clean up
         RateLimiter::clear($storageKey);
     }

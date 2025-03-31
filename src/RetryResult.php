@@ -182,4 +182,32 @@ class RetryResult
     {
         return (bool) $this->error;
     }
+
+    /**
+     * Send failed retry result to a Dead Letter Queue.
+     *
+     * @param  string  $operation  Operation name for context
+     * @param  array  $context  Additional context data
+     * @return string|int|null Dead letter ID or null if not failed or not stored
+     */
+    public function toDeadLetterQueue(string $operation = '', array $context = []): string|int|null
+    {
+        if (! $this->failed()) {
+            return null;
+        }
+
+        // Resolve the DLQ handler from the container if available, otherwise create a new one
+        if (class_exists('\Illuminate\Container\Container') && \Illuminate\Container\Container::getInstance()->bound('retry.dead-letter-queue')) {
+            $handler = \Illuminate\Container\Container::getInstance()->make('retry.dead-letter-queue');
+        } else {
+            // Only autoload the handler class if it exists
+            if (! class_exists('\GregPriday\LaravelRetry\DeadLetterQueue\DeadLetterQueueHandler')) {
+                return null;
+            }
+
+            $handler = new \GregPriday\LaravelRetry\DeadLetterQueue\DeadLetterQueueHandler;
+        }
+
+        return $handler->handle($this, $operation, $context);
+    }
 }
