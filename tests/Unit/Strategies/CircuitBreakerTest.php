@@ -1,6 +1,6 @@
 <?php
 
-namespace GregPriday\LaravelRetry\Tests\Unit;
+namespace GregPriday\LaravelRetry\Tests\Unit\Strategies;
 
 use GregPriday\LaravelRetry\Contracts\RetryStrategy;
 use GregPriday\LaravelRetry\Strategies\CircuitBreakerStrategy;

@@ -1,6 +1,6 @@
 <?php
 
-namespace GregPriday\LaravelRetry\Tests\Unit;
+namespace GregPriday\LaravelRetry\Tests\Unit\Strategies;
 
 use GregPriday\LaravelRetry\Strategies\DecorrelatedJitterStrategy;
 use GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy;

@@ -1,14 +1,31 @@
 <?php
 
-namespace GregPriday\LaravelRetry\Tests\Unit;
+namespace GregPriday\LaravelRetry\Tests\Unit\Strategies;
 
 use GregPriday\LaravelRetry\Contracts\RetryStrategy;
 use GregPriday\LaravelRetry\Strategies\RateLimitStrategy;
 use GregPriday\LaravelRetry\Tests\TestCase;
+use Illuminate\Support\Facades\RateLimiter;
 use Mockery;
 
 class RateLimitStrategyTest extends TestCase
 {
+    /**
+     * Setup the test environment.
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+        
+        // Clear rate limiter before each test
+        RateLimiter::clear('test_rate_limit_persistence');
+        RateLimiter::clear('key1');
+        RateLimiter::clear('key2');
+        RateLimiter::clear('test_expiration');
+        RateLimiter::clear('test_zero');
+        RateLimiter::clear('test_large');
+    }
+
     /**
      * Test rate limit persistence across multiple operations with shared storage.
      */
@@ -51,8 +68,8 @@ class RateLimitStrategyTest extends TestCase
         $this->assertFalse($limiter1->shouldRetry(0, 5, null));
         $this->assertFalse($limiter2->shouldRetry(0, 5, null));
 
-        // Reset for other tests
-        RateLimitStrategy::resetAll();
+        // Clean up
+        RateLimiter::clear($storageKey);
     }
 
     /**
@@ -98,8 +115,9 @@ class RateLimitStrategyTest extends TestCase
         // Now limiter2 should also be limited
         $this->assertFalse($limiter2->shouldRetry(0, 5, null));
 
-        // Reset for other tests
-        RateLimitStrategy::resetAll();
+        // Clean up
+        RateLimiter::clear('key1');
+        RateLimiter::clear('key2');
     }
 
     /**
@@ -137,8 +155,8 @@ class RateLimitStrategyTest extends TestCase
         // And limited again after the quota is used
         $this->assertFalse($limiter->shouldRetry(0, 5, null));
 
-        // Reset for other tests
-        RateLimitStrategy::resetAll();
+        // Clean up
+        RateLimiter::clear('test_expiration');
     }
 
     /**
@@ -162,8 +180,8 @@ class RateLimitStrategyTest extends TestCase
         $this->assertFalse($limiter->shouldRetry(0, 5, null));
         $this->assertFalse($limiter->shouldRetry(0, 5, null));
 
-        // Reset for other tests
-        RateLimitStrategy::resetAll();
+        // Clean up
+        RateLimiter::clear('test_zero');
     }
 
     /**
@@ -189,7 +207,45 @@ class RateLimitStrategyTest extends TestCase
         // Even after recording an attempt
         $this->assertTrue($limiter->shouldRetry(0, 5, null));
 
-        // Reset for other tests
-        RateLimitStrategy::resetAll();
+        // Clean up
+        RateLimiter::clear('test_large');
+    }
+    
+    /**
+     * Test the rate limit info method.
+     */
+    public function test_rate_limit_info()
+    {
+        // Create a mock inner strategy
+        $innerStrategy = Mockery::mock(RetryStrategy::class);
+        $innerStrategy->shouldReceive('shouldRetry')->andReturn(true);
+        $innerStrategy->shouldReceive('getDelay')->andReturn(0);
+        
+        $storageKey = 'test_rate_limit_info';
+        $maxAttempts = 5;
+        $timeWindow = 60;
+        
+        $limiter = new RateLimitStrategy(
+            $innerStrategy,
+            maxAttempts: $maxAttempts,
+            timeWindow: $timeWindow,
+            storageKey: $storageKey
+        );
+        
+        // Make some attempts
+        $limiter->shouldRetry(0, 5, null);
+        $limiter->shouldRetry(0, 5, null);
+        
+        // Check the info
+        $info = $limiter->getRateLimitInfo();
+        
+        $this->assertEquals($maxAttempts, $info['max_attempts']);
+        $this->assertEquals($timeWindow, $info['time_window']);
+        $this->assertEquals($storageKey, $info['storage_key']);
+        $this->assertEquals(3, $info['remaining']); // 5 max - 2 attempts = 3 remaining
+        $this->assertEquals(2, $info['current_rate']); // 2 attempts made
+        
+        // Clean up
+        RateLimiter::clear($storageKey);
     }
 }
