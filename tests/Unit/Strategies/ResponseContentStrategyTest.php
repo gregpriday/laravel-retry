@@ -9,6 +9,12 @@ use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use ReflectionProperty;
 use RuntimeException;
+use Mockery;
+use Psr\Http\Message\ResponseInterface;
+use GuzzleHttp\Exception\RequestException;
+use GuzzleHttp\Psr7\Request;
+use GuzzleHttp\Psr7\Response;
+use Psr\Http\Message\StreamInterface;
 
 class ResponseContentStrategyTest extends TestCase
 {
@@ -55,9 +61,9 @@ class ResponseContentStrategyTest extends TestCase
     public function it_detects_retryable_content_based_on_regex_patterns()
     {
         $mockResponse = $this->createMockResponse('The server is temporarily unavailable, please try again later.');
+        $mockRequest = new Request('GET', 'http://example.com');
 
-        $exception = new RuntimeException('API Error');
-        $this->setPrivateProperty($exception, 'response', $mockResponse);
+        $exception = new RequestException('API Error', $mockRequest, $mockResponse);
 
         $innerStrategy = $this->createMock(RetryStrategy::class);
         $innerStrategy->expects($this->never())->method('shouldRetry');
@@ -81,9 +87,9 @@ class ResponseContentStrategyTest extends TestCase
             ],
         ]);
         $mockResponse = $this->createMockResponse($jsonResponse);
+        $mockRequest = new Request('GET', 'http://example.com');
 
-        $exception = new RuntimeException('API Error');
-        $this->setPrivateProperty($exception, 'response', $mockResponse);
+        $exception = new RequestException('API Error', $mockRequest, $mockResponse);
 
         $innerStrategy = $this->createMock(RetryStrategy::class);
         $innerStrategy->expects($this->never())->method('shouldRetry');
@@ -101,9 +107,9 @@ class ResponseContentStrategyTest extends TestCase
     public function it_handles_non_json_responses_gracefully()
     {
         $mockResponse = $this->createMockResponse('Not a valid JSON response');
+        $mockRequest = new Request('GET', 'http://example.com');
 
-        $exception = new RuntimeException('API Error');
-        $this->setPrivateProperty($exception, 'response', $mockResponse);
+        $exception = new RequestException('API Error', $mockRequest, $mockResponse);
 
         $innerStrategy = $this->createMock(RetryStrategy::class);
         $innerStrategy->method('shouldRetry')->willReturn(false);
@@ -122,16 +128,16 @@ class ResponseContentStrategyTest extends TestCase
     public function it_uses_custom_content_checker_when_provided()
     {
         $mockResponse = $this->createMockResponse('Custom response format');
+        $mockRequest = new Request('GET', 'http://example.com');
 
-        $exception = new RuntimeException('API Error');
-        $this->setPrivateProperty($exception, 'response', $mockResponse);
+        $exception = new RequestException('API Error', $mockRequest, $mockResponse);
 
         $innerStrategy = $this->createMock(RetryStrategy::class);
         $innerStrategy->expects($this->never())->method('shouldRetry');
 
         $strategy = new ResponseContentStrategy($innerStrategy);
         $strategy->withContentChecker(function ($response) {
-            return $response->getBody() === 'Custom response format';
+            return $response->getBody()->getContents() === 'Custom response format';
         });
 
         $this->assertTrue($strategy->shouldRetry(2, 5, $exception));
@@ -144,12 +150,15 @@ class ResponseContentStrategyTest extends TestCase
             'error_code' => 'CUSTOM_ERROR',
         ]);
         $mockResponse = $this->createMockResponse($jsonResponse);
+        $mockRequest = new Request('GET', 'http://example.com');
 
-        $exception = new RuntimeException('API Error');
-        $this->setPrivateProperty($exception, 'response', $mockResponse);
+        $exception = new RequestException('API Error', $mockRequest, $mockResponse);
 
         $innerStrategy = $this->createMock(RetryStrategy::class);
-        $innerStrategy->expects($this->never())->method('shouldRetry');
+        $innerStrategy->expects($this->once())
+            ->method('shouldRetry')
+            ->with(2, 5, $exception)
+            ->willReturn(false);
 
         $strategy = new ResponseContentStrategy(
             $innerStrategy,
@@ -177,9 +186,9 @@ class ResponseContentStrategyTest extends TestCase
             ],
         ]);
         $mockResponse = $this->createMockResponse($jsonResponse);
+        $mockRequest = new Request('GET', 'http://example.com');
 
-        $exception = new RuntimeException('API Error');
-        $this->setPrivateProperty($exception, 'response', $mockResponse);
+        $exception = new RequestException('API Error', $mockRequest, $mockResponse);
 
         $innerStrategy = $this->createMock(RetryStrategy::class);
 
@@ -211,27 +220,17 @@ class ResponseContentStrategyTest extends TestCase
     /**
      * Create a mock response object with the given body content
      */
-    private function createMockResponse(string $body)
+    private function createMockResponse(string $body, int $statusCode = 500): ResponseInterface
     {
-        return new class($body)
-        {
-            private $body;
+        $stream = Mockery::mock(StreamInterface::class);
+        $stream->shouldReceive('getContents')->andReturn($body)->byDefault();
+        $stream->shouldReceive('__toString')->andReturn($body)->byDefault();
+        $stream->shouldReceive('rewind')->zeroOrMoreTimes()->byDefault();
 
-            public function __construct($body)
-            {
-                $this->body = $body;
-            }
-
-            public function getBody()
-            {
-                return $this->body;
-            }
-
-            public function body()
-            {
-                return $this->body;
-            }
-        };
+        $response = Mockery::mock(ResponseInterface::class);
+        $response->shouldReceive('getBody')->andReturn($stream)->byDefault();
+        $response->shouldReceive('getStatusCode')->andReturn($statusCode)->byDefault();
+        return $response;
     }
 
     /**
@@ -239,17 +238,9 @@ class ResponseContentStrategyTest extends TestCase
      */
     private function setPrivateProperty(object $object, string $propertyName, $value): void
     {
-        $reflection = new ReflectionClass($object);
-
-        if (! $reflection->hasProperty($propertyName)) {
-            $reflection = new ReflectionClass($reflection->getName());
-            $property = new ReflectionProperty($reflection->getName(), $propertyName);
-            $property->setAccessible(true);
-            $property->setValue($object, $value);
-        } else {
-            $property = $reflection->getProperty($propertyName);
-            $property->setAccessible(true);
-            $property->setValue($object, $value);
-        }
+        $reflection = new ReflectionClass(get_class($object));
+        $property = $reflection->getProperty($propertyName);
+        $property->setAccessible(true);
+        $property->setValue($object, $value);
     }
 }

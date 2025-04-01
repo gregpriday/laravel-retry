@@ -63,21 +63,21 @@ class GuzzleResponseStrategyTest extends TestCase
                 false,
             ],
             'date-based-retry-after' => [
-                ['Retry-After' => gmdate('D, d M Y H:i:s T', $now + 60)],
-                60,
+                ['Retry-After' => gmdate('D, d M Y H:i:s T', $now + 45)],
+                45,
                 'Should calculate seconds from date-based Retry-After header',
                 true,
             ],
             'x-ratelimit-reset-timestamp' => [
-                ['X-RateLimit-Reset' => (string) ($now + 120)],
-                120,
+                ['X-RateLimit-Reset' => (string) ($now + 135)],
+                135,
                 'Should calculate seconds from X-RateLimit-Reset timestamp',
                 true,
             ],
-            'x-ratelimit-reset-seconds' => [
+            'x-ratelimit-reset-past-timestamp' => [
                 ['X-RateLimit-Reset' => '45'],
-                45,
-                'Should use seconds from X-RateLimit-Reset header',
+                0,
+                'Should return 0 for past Unix timestamps in X-RateLimit-Reset header',
                 false,
             ],
             'x-retry-in' => [

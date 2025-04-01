@@ -145,8 +145,8 @@ class RateLimitStrategyTest extends TestCase
         // Verify we're limited
         $this->assertFalse($limiter->shouldRetry(0, 5, null));
 
-        // Wait for the time window to expire
-        sleep(2);
+        // Advance time by 2 seconds
+        $this->travel(2)->seconds();
 
         // Should be able to make attempts again
         $this->assertTrue($limiter->shouldRetry(0, 5, null));

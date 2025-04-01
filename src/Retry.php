@@ -51,17 +51,7 @@ class Retry
      */
     protected array $retryableExceptions = [];
 
-    /**
-     * Collection of exceptions that occurred during retries.
-     *
-     * @var array<array{
-     *    attempt: int,
-     *    exception: Throwable,
-     *    timestamp: int,
-     *    was_retryable: bool
-     * }>
-     */
-    protected array $exceptionHistory = [];
+    protected RetryContext $context;
 
     /**
      * Custom condition for retry logic.
@@ -83,9 +73,11 @@ class Retry
     protected array $eventCallbacks = [];
 
     /**
-     * Time when the operation started.
+     * Metadata to be added to the context.
+     *
+     * @var array<string, mixed>
      */
-    protected ?float $startTime = null;
+    protected array $pendingMetadata = [];
 
     /**
      * Create a new retry instance.
@@ -177,62 +169,82 @@ class Retry
     }
 
     /**
-     * Execute an operation with retries.
+     * Run an operation with retries.
      *
      * @template T
      *
-     * @param  Closure(): T  $operation  The operation to execute
-     * @param  array<string>  $additionalPatterns  Additional retryable error patterns
-     * @param  array<class-string<Throwable>>  $additionalExceptions  Additional retryable exception types
-     * @return RetryResult The operation result wrapped in a RetryResult
+     * @param  Closure(): T  $operation
+     * @param  array<string>  $additionalPatterns
+     * @param  array<class-string<Throwable>>  $additionalExceptions
+     * @return RetryResult<T>
+     *
+     * @throws Throwable
      */
     public function run(
         Closure $operation,
         array $additionalPatterns = [],
         array $additionalExceptions = []
     ): RetryResult {
-        // Reset exception history at the start of each run
-        $this->exceptionHistory = [];
+        // Initialize context at the start of each run
+        $this->context = new RetryContext(
+            maxRetries: $this->maxRetries,
+            startTime: microtime(true)
+        );
+
+        // Apply any pending metadata
+        if (!empty($this->pendingMetadata)) {
+            $this->context->addMetadata($this->pendingMetadata);
+            $this->pendingMetadata = [];
+        }
 
         $attempt = 0;
         $lastException = null;
         $patterns = [...($this->exceptionManager ? $this->exceptionManager->getAllPatterns() : $this->retryablePatterns), ...$additionalPatterns];
         $exceptions = [...($this->exceptionManager ? $this->exceptionManager->getAllExceptions() : $this->retryableExceptions), ...$additionalExceptions];
-        $this->startTime = microtime(true);
 
         do {
+            $attemptStartTime = microtime(true);
             try {
                 if (function_exists('set_time_limit')) {
                     set_time_limit($this->timeout);
                 }
 
                 $result = $operation();
-                $totalTime = microtime(true) - $this->startTime;
+                $duration = microtime(true) - $attemptStartTime;
+
+                // Record successful attempt
+                $this->context->recordAttempt($attempt, null, false, null, $duration);
 
                 // Dispatch success event
-                $this->dispatchOperationSucceededEvent($attempt, $result, $totalTime);
+                $this->dispatchOperationSucceededEvent($attempt, $result, $duration);
 
                 return new RetryResult(
                     result: $result,
                     error: null,
-                    exceptionHistory: $this->exceptionHistory
+                    exceptionHistory: $this->context->getExceptionHistory()
                 );
             } catch (Throwable $e) {
+                $duration = microtime(true) - $attemptStartTime;
                 $lastException = $e;
                 $isRetryable = $this->isRetryable($e, $patterns, $exceptions);
 
-                // Record the exception in the history
-                $this->exceptionHistory[] = [
-                    'attempt'       => $attempt,
-                    'exception'     => $e,
-                    'timestamp'     => time(),
-                    'was_retryable' => $isRetryable,
-                ];
+                // Record the attempt with the exception
+                $this->context->recordAttempt(
+                    attempt: $attempt,
+                    exception: $e,
+                    wasRetryable: $isRetryable,
+                    delay: $isRetryable ? $this->strategy->getDelay($attempt, $this->retryDelay) : null,
+                    duration: $duration
+                );
 
                 // If the exception is retryable and we have attempts left, then retry
                 if ($isRetryable && $attempt < $this->maxRetries) {
                     // Dispatch retry event before handling the error
-                    $this->dispatchRetryingOperationEvent($attempt + 1, $this->strategy->getDelay($attempt, $this->retryDelay), $e);
+                    $this->dispatchRetryingOperationEvent(
+                        attempt: $attempt + 1,
+                        delay: $this->strategy->getDelay($attempt, $this->retryDelay),
+                        exception: $e
+                    );
 
                     // Handle the retryable error (which includes sleeping if needed)
                     $this->handleRetryableError($e, $attempt);
@@ -244,7 +256,7 @@ class Retry
                     return new RetryResult(
                         result: null,
                         error: $e,
-                        exceptionHistory: $this->exceptionHistory
+                        exceptionHistory: $this->context->getExceptionHistory()
                     );
                 }
             }
@@ -256,7 +268,7 @@ class Retry
         return new RetryResult(
             result: null,
             error: $lastException,
-            exceptionHistory: $this->exceptionHistory
+            exceptionHistory: $this->context->getExceptionHistory()
         );
     }
 
@@ -271,10 +283,10 @@ class Retry
         // First check the custom condition if it exists
         if ($this->retryCondition !== null) {
             $context = [
-                'attempt'            => count($this->exceptionHistory),
+                'attempt'            => count($this->context->getExceptionHistory()),
                 'max_retries'        => $this->maxRetries,
-                'remaining_attempts' => $this->maxRetries - count($this->exceptionHistory),
-                'exception_history'  => $this->exceptionHistory,
+                'remaining_attempts' => $this->maxRetries - count($this->context->getExceptionHistory()),
+                'exception_history'  => $this->context->getExceptionHistory(),
             ];
 
             if (! ($this->retryCondition)($e, $context)) {
@@ -366,7 +378,7 @@ class Retry
      */
     public function getExceptionHistory(): array
     {
-        return $this->exceptionHistory;
+        return $this->context->getExceptionHistory();
     }
 
     /**
@@ -374,7 +386,7 @@ class Retry
      */
     public function getExceptionCount(): int
     {
-        return count($this->exceptionHistory);
+        return count($this->context->getExceptionHistory());
     }
 
     /**
@@ -382,7 +394,7 @@ class Retry
      */
     public function getRetryableExceptionCount(): int
     {
-        return count(array_filter($this->exceptionHistory, fn ($entry) => $entry['was_retryable']));
+        return count(array_filter($this->context->getExceptionHistory(), fn ($entry) => $entry['was_retryable']));
     }
 
     /**
@@ -493,7 +505,8 @@ class Retry
                 maxRetries: $this->maxRetries,
                 delay: $delay,
                 exception: $exception,
-                timestamp: time()
+                timestamp: time(),
+                context: $this->context
             );
 
             // Call the onRetry callback if it exists
@@ -516,7 +529,8 @@ class Retry
                 attempt: $attempt,
                 result: $result,
                 totalTime: $totalTime,
-                timestamp: time()
+                timestamp: time(),
+                context: $this->context
             );
 
             // Call the onSuccess callback if it exists
@@ -538,8 +552,9 @@ class Retry
             $event = new OperationFailedEvent(
                 attempt: $attempt,
                 error: $error,
-                exceptionHistory: $this->exceptionHistory,
-                timestamp: time()
+                exceptionHistory: $this->context->getExceptionHistory(),
+                timestamp: time(),
+                context: $this->context
             );
 
             // Call the onFailure callback if it exists
@@ -550,5 +565,29 @@ class Retry
             // Use Laravel Event facade to ensure events are caught by Event::fake in tests
             Event::dispatch($event);
         }
+    }
+
+    /**
+     * Add metadata to be included in retry events.
+     *
+     * @param  array<string, mixed>  $metadata
+     */
+    public function withMetadata(array $metadata): self
+    {
+        if (isset($this->context)) {
+            $this->context->addMetadata($metadata);
+        } else {
+            $this->pendingMetadata = array_merge($this->pendingMetadata, $metadata);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Get the current retry context.
+     */
+    public function getContext(): ?RetryContext
+    {
+        return $this->context ?? null;
     }
 }

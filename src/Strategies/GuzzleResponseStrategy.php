@@ -90,13 +90,18 @@ class GuzzleResponseStrategy implements RetryStrategy
             return null;
         }
 
-        // If it's a date, convert to seconds
-        if (strtotime($header) !== false) {
-            return max(0, strtotime($header) - time());
+        // If it's numeric, treat it as seconds directly
+        if (is_numeric($header)) {
+            return (int) $header;
         }
 
-        // Otherwise, it should be seconds
-        return is_numeric($header) ? (int) $header : null;
+        // If it's a date, convert to seconds, ensuring UTC interpretation
+        $timestamp = strtotime($header . ' UTC');
+        if ($timestamp === false) {
+            return null;
+        }
+
+        return max(0, $timestamp - time());
     }
 
     /**
@@ -121,15 +126,9 @@ class GuzzleResponseStrategy implements RetryStrategy
             return null;
         }
 
-        $resetTime = (int) $resetTime;
-
-        // Some APIs send Unix timestamp
-        if ($resetTime > time()) {
-            return max(0, $resetTime - time());
-        }
-
-        // Others send seconds from now
-        return max(0, $resetTime);
+        // Always treat as Unix timestamp
+        $resetTimestamp = (int) $resetTime;
+        return max(0, $resetTimestamp - time());
     }
 
     /**

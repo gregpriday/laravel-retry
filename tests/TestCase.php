@@ -2,10 +2,13 @@
 
 namespace GregPriday\LaravelRetry\Tests;
 
+use Exception;
 use GregPriday\LaravelRetry\Exceptions\ExceptionHandlerManager;
 use GregPriday\LaravelRetry\Exceptions\Handlers\GuzzleHandler;
 use GregPriday\LaravelRetry\Retry;
 use GregPriday\LaravelRetry\RetryServiceProvider;
+use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Psr7\Request;
 use Mockery;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
 use RuntimeException;
@@ -85,12 +88,59 @@ abstract class TestCase extends OrchestraTestCase
     /**
      * Create a new retryable exception with the given message.
      */
-    protected function createGuzzleException(string $message): \GuzzleHttp\Exception\ConnectException
+    protected function createGuzzleException(string $message): ConnectException
     {
-        return new \GuzzleHttp\Exception\ConnectException(
+        return new ConnectException(
             $message,
-            new \GuzzleHttp\Psr7\Request('GET', 'http://example.com')
+            new Request('GET', 'http://example.com')
         );
+    }
+
+    protected function assertValidMetrics(array $metrics): void
+    {
+        $requiredMetrics = [
+            'total_duration',
+            'total_delay',
+            'average_attempt_duration',
+            'min_attempt_duration',
+            'max_attempt_duration',
+            'total_elapsed_time',
+        ];
+
+        foreach ($requiredMetrics as $metric) {
+            $this->assertArrayHasKey($metric, $metrics, "Missing required metric: {$metric}");
+            $this->assertIsFloat($metrics[$metric], "Metric {$metric} should be a float");
+            $this->assertGreaterThanOrEqual(0, $metrics[$metric], "Metric {$metric} should be non-negative");
+        }
+    }
+
+    protected function assertValidExceptionHistory(array $history): void
+    {
+        foreach ($history as $attempt) {
+            $this->assertArrayHasKey('exception', $attempt, 'Exception history entry should have an exception');
+            $this->assertArrayHasKey('duration', $attempt, 'Exception history entry should have a duration');
+            $this->assertArrayHasKey('delay', $attempt, 'Exception history entry should have a delay');
+            $this->assertInstanceOf(Exception::class, $attempt['exception']);
+            $this->assertIsFloat($attempt['duration']);
+            $this->assertIsFloat($attempt['delay']);
+        }
+    }
+
+    protected function assertValidContext(\GregPriday\LaravelRetry\RetryContext $context): void
+    {
+        // Check basic properties
+        $this->assertIsString($context->getOperationId());
+        $this->assertIsArray($context->getMetrics());
+        $this->assertIsArray($context->getMetadata());
+        $this->assertIsArray($context->getExceptionHistory());
+
+        // Validate metrics
+        $this->assertValidMetrics($context->getMetrics());
+
+        // Validate exception history if any exists
+        if (! empty($context->getExceptionHistory())) {
+            $this->assertValidExceptionHistory($context->getExceptionHistory());
+        }
     }
 
     protected function tearDown(): void

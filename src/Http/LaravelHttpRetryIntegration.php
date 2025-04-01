@@ -2,9 +2,11 @@
 
 namespace GregPriday\LaravelRetry\Http;
 
+use Closure;
 use GregPriday\LaravelRetry\Contracts\RetryStrategy;
-use GregPriday\LaravelRetry\ExceptionHandlerManager;
+use GregPriday\LaravelRetry\Strategies\CustomOptionsStrategy;
 use GregPriday\LaravelRetry\Strategies\GuzzleResponseStrategy;
+use GregPriday\LaravelRetry\Strategies\RateLimitStrategy;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Throwable;
@@ -24,23 +26,35 @@ class LaravelHttpRetryIntegration
          *
          * @param  int  $maxAttempts  Maximum number of retries
          * @param  RetryStrategy|null  $strategy  Retry strategy to use
-         * @param  int  $retryDelay  Base delay in seconds
-         * @param  int|null  $timeout  Timeout in seconds
-         * @param  ExceptionHandlerManager|null  $exceptionManager  Custom exception manager
-         * @param  bool  $throw  Whether to throw exceptions after all retries fail
+         * @param  array  $options  Additional options for retry behavior
          * @return PendingRequest
          */
         Http::macro('robustRetry', function (
             int $maxAttempts = 3,
             ?RetryStrategy $strategy = null,
-            int $retryDelay = 1,
-            ?int $timeout = null,
-            ?ExceptionHandlerManager $exceptionManager = null,
-            bool $throw = true
+            array $options = []
         ) {
             // Default to GuzzleResponseStrategy if no strategy provided
-            $strategy ??= new GuzzleResponseStrategy;
+            $baseStrategy = $strategy ?? new GuzzleResponseStrategy;
+
+            // Wrap with CustomOptionsStrategy if options provided
+            if (! empty($options)) {
+                $strategy = new CustomOptionsStrategy($baseStrategy, $options);
+            } else {
+                $strategy = $baseStrategy;
+            }
+
             $pendingRequest = $this;
+
+            // Apply middleware if specified
+            if (isset($options['middleware']) && is_callable($options['middleware'])) {
+                $pendingRequest = $options['middleware']($pendingRequest);
+            }
+
+            // Apply timeout if specified
+            if (isset($options['timeout'])) {
+                $pendingRequest = $pendingRequest->timeout($options['timeout']);
+            }
 
             // Determine if we should retry based on strategy
             $whenCallback = function (Throwable $exception, PendingRequest $request) use ($strategy, $maxAttempts) {
@@ -50,28 +64,32 @@ class LaravelHttpRetryIntegration
                 return $currentAttempt < $maxAttempts && $strategy->shouldRetry($currentAttempt - 1, $maxAttempts, $exception);
             };
 
-            // Calculate delay using strategy
-            $sleepCallback = function (int $attempt, Throwable $exception) use ($strategy, $retryDelay) {
-                return $strategy->getDelay($attempt, $retryDelay) * 1000; // Convert to milliseconds for Laravel's HTTP client
+            // Calculate delay using strategy (convert attempt to 0-based index)
+            $sleepCallback = function (int $attempt, Throwable $exception) use ($strategy, $options) {
+                $baseDelay = $options['base_delay'] ?? 1;
+
+                return $strategy->getDelay($attempt - 1, $baseDelay) * 1000; // Convert to milliseconds
             };
 
-            // Apply timeout if provided
-            if ($timeout !== null) {
-                $pendingRequest = $pendingRequest->timeout($timeout);
-            }
-
             // Apply retry using Laravel's built-in retry method
+            $throw = $options['throw'] ?? true;
+
             return $pendingRequest->retry($maxAttempts, $sleepCallback, $whenCallback, $throw);
         });
 
         /**
-         * Apply a specific retry strategy to the HTTP request
+         * Apply a specific retry strategy to the HTTP request with options
          *
          * @param  RetryStrategy  $strategy  The strategy to use for retries
+         * @param  array  $options  Additional options for retry behavior
          * @return PendingRequest
          */
-        Http::macro('withRetryStrategy', function (RetryStrategy $strategy) {
-            return $this->robustRetry(3, $strategy);
+        Http::macro('withRetryStrategy', function (RetryStrategy $strategy, array $options = []) {
+            return $this->robustRetry(
+                $options['max_attempts'] ?? 3,
+                $strategy,
+                $options
+            );
         });
 
         /**
@@ -79,26 +97,55 @@ class LaravelHttpRetryIntegration
          *
          * @param  int  $maxAttempts  Maximum number of retries
          * @param  int  $timeout  Circuit timeout in seconds
+         * @param  array  $options  Additional options for retry behavior
          * @return PendingRequest
          */
-        Http::macro('withCircuitBreaker', function (int $maxAttempts = 3, int $timeout = 60) {
+        Http::macro('withCircuitBreaker', function (int $maxAttempts = 3, int $timeout = 60, array $options = []) {
             $strategy = app(\GregPriday\LaravelRetry\Strategies\CircuitBreakerStrategy::class, [
                 'timeout' => $timeout,
             ]);
 
-            return $this->robustRetry($maxAttempts, $strategy);
+            return $this->robustRetry($maxAttempts, $strategy, $options);
         });
 
         /**
          * Apply rate limit detection and handling to the HTTP request
          *
-         * @param  int  $maxAttempts  Maximum number of retries
+         * @param  int  $maxAttempts  Maximum number of retries per time window
+         * @param  int  $timeWindow  Time window in seconds
+         * @param  array  $options  Additional options for retry behavior
          * @return PendingRequest
          */
-        Http::macro('withRateLimitHandling', function (int $maxAttempts = 3) {
-            $strategy = new GuzzleResponseStrategy;
+        Http::macro('withRateLimitHandling', function (int $maxAttempts = 100, int $timeWindow = 60, array $options = []) {
+            $strategy = new RateLimitStrategy(
+                innerStrategy: new GuzzleResponseStrategy,
+                maxAttempts: $maxAttempts,
+                timeWindow: $timeWindow
+            );
 
-            return $this->robustRetry($maxAttempts, $strategy);
+            return $this->robustRetry(
+                $options['max_attempts'] ?? 3,
+                $strategy,
+                $options
+            );
+        });
+
+        /**
+         * Apply custom retry conditions with options
+         *
+         * @param  Closure  $condition  Custom retry condition
+         * @param  array  $options  Additional options for retry behavior
+         * @return PendingRequest
+         */
+        Http::macro('retryWhen', function (Closure $condition, array $options = []) {
+            $strategy = new CustomOptionsStrategy(new GuzzleResponseStrategy);
+            $strategy->withShouldRetryCallback($condition);
+
+            return $this->robustRetry(
+                $options['max_attempts'] ?? 3,
+                $strategy,
+                $options
+            );
         });
     }
 }
