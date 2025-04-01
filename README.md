@@ -1,5 +1,12 @@
 # Laravel Retry
 
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/gregpriday/laravel-retry.svg?style=flat-square)](https://packagist.org/packages/gregpriday/laravel-retry)
+[![Total Downloads](https://img.shields.io/packagist/dt/gregpriday/laravel-retry.svg?style=flat-square)](https://packagist.org/packages/gregpriday/laravel-retry)
+[![License](https://img.shields.io/packagist/l/gregpriday/laravel-retry.svg?style=flat-square)](LICENSE.md)
+[![PHP Version](https://img.shields.io/badge/php-%5E8.1-blue.svg?style=flat-square)](composer.json)
+[![Laravel Version](https://img.shields.io/badge/laravel-10%20%7C%2011%20%7C%2012-orange.svg?style=flat-square)](composer.json)
+[![Code Style](https://img.shields.io/badge/code%20style-laravel-brightgreen.svg?style=flat-square)](https://laravel.com/docs/pint)
+
 A powerful, flexible, and deeply integrated retry system for Laravel applications that goes beyond simple retry loops. This package provides sophisticated retry strategies, deep Laravel integration, and comprehensive observability to make your applications more resilient to transient failures.
 
 ## Introduction
