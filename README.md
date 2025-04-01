@@ -39,12 +39,6 @@ A robust and flexible retry mechanism for Laravel applications to handle transie
     - Pipe-specific retry settings
     - Progress tracking during pipeline execution
 
-- **Dead Letter Queue Integration**
-    - Store failed operations after exhausted retries
-    - Process failed operations later
-    - Database storage with flexible filtering
-    - Comprehensive error context preservation
-
 - **Comprehensive Configuration**
     - Configurable retry attempts
     - Adjustable delays and timeouts
@@ -68,15 +62,6 @@ php artisan vendor:publish --tag="retry-config"
 ```
 
 This publishes a `config/retry.php` file where you can adjust package-specific settings.
-
-If you're planning to use the Dead Letter Queue with database storage, publish the migrations:
-
-```bash
-php artisan vendor:publish --tag="retry-migrations"
-php artisan migrate
-```
-
-This creates the necessary table to store failed operations after retries are exhausted.
 
 ---
 
@@ -343,100 +328,6 @@ $strategy->withContentChecker(function ($response) {
 ```
 
 This strategy is especially useful for APIs that return 200 OK status codes but include error indicators in the response body.
-
----
-
-## Dead Letter Queue Integration
-
-The Dead Letter Queue (DLQ) provides a way to handle operations that fail after all retry attempts have been exhausted. 
-
-### Basic Usage
-
-Send a failed operation to the DLQ:
-
-```php
-$result = Retry::run(function () {
-    return apiCall();
-});
-
-if ($result->failed()) {
-    // Send to DLQ with operation name and context
-    $result->toDeadLetterQueue(
-        'api.fetch_user_data',
-        ['user_id' => $userId, 'timestamp' => now()]
-    );
-}
-```
-
-### Processing Failed Operations
-
-Process items in the DLQ:
-
-```php
-use GregPriday\LaravelRetry\DeadLetterQueue\DeadLetterQueueHandler;
-
-// Resolve the handler from the container
-$dlq = app('retry.dead-letter-queue');
-
-// Or create a new instance with custom storage
-$dlq = new DeadLetterQueueHandler(
-    storage: new DatabaseDeadLetterQueueStorage(),
-    shouldLog: true
-);
-
-// Process pending items (limit 10)
-$results = $dlq->processQueue(
-    function ($deadLetter, $id) {
-        // Process the failed operation
-        $operation = $deadLetter['operation'];
-        $context = $deadLetter['context'];
-        
-        // Your retry or alternative processing logic
-        // Return a result for the processing
-        return ['status' => 'processed', 'result' => $processedData];
-    },
-    limit: 10,
-    filters: ['status' => 'pending']
-);
-```
-
-### Available Filters
-
-When retrieving or processing items:
-
-```php
-$filters = [
-    'status' => 'pending',            // Filter by status (pending, processed, failed)
-    'operation' => 'api.fetch_data',  // Filter by operation name
-    'created_before' => '2023-06-01', // Filter by creation date
-    'created_after' => '2023-05-01',  // Filter by creation date
-];
-
-// Count items
-$count = $dlq->storage->count($filters);
-
-// Clear items
-$deleted = $dlq->storage->clear($filters);
-```
-
-### Custom DLQ Handler
-
-Create a custom handler:
-
-```php
-$dlq->withHandler(function (RetryResult $result, string $operation, array $context) {
-    // Custom handling logic
-    Log::critical('Operation failed', [
-        'operation' => $operation,
-        'error' => $result->getError()->getMessage(),
-        'context' => $context
-    ]);
-    
-    // Send an alert notification, etc.
-    Notification::route('mail', 'admin@example.com')
-        ->notify(new OperationFailedNotification($operation, $result));
-});
-```
 
 ---
 

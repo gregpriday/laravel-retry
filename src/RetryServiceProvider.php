@@ -2,9 +2,6 @@
 
 namespace GregPriday\LaravelRetry;
 
-use GregPriday\LaravelRetry\DeadLetterQueue\DatabaseDeadLetterQueueStorage;
-use GregPriday\LaravelRetry\DeadLetterQueue\DeadLetterQueueHandler;
-use GregPriday\LaravelRetry\DeadLetterQueue\DeadLetterQueueStorage;
 use GregPriday\LaravelRetry\Exceptions\ExceptionHandlerManager;
 use GregPriday\LaravelRetry\Http\HttpClientServiceProvider;
 use GregPriday\LaravelRetry\Pipeline\RetryablePipeline;
@@ -47,23 +44,6 @@ class RetryServiceProvider extends ServiceProvider
             return new RetryablePipeline($app);
         });
 
-        // Register the DeadLetterQueueStorage implementation
-        $this->app->bind(DeadLetterQueueStorage::class, function ($app) {
-            return new DatabaseDeadLetterQueueStorage(
-                table: config('retry.dead_letter.table'),
-                connection: config('retry.dead_letter.connection')
-            );
-        });
-
-        // Register the DeadLetterQueueHandler
-        $this->app->singleton('retry.dead-letter-queue', function ($app) {
-            return new DeadLetterQueueHandler(
-                storage: $app->make(DeadLetterQueueStorage::class),
-                shouldLog: config('retry.dead_letter.auto_log_failures', true),
-                logLevel: config('retry.dead_letter.log_level', 'warning')
-            );
-        });
-
         // Register the facade accessor
         $this->app->alias(Retry::class, 'retry');
         $this->app->alias(RetryablePipeline::class, 'retryable-pipeline');
@@ -85,11 +65,6 @@ class RetryServiceProvider extends ServiceProvider
             $this->publishes([
                 __DIR__.'/Exceptions/Handlers' => app_path('Exceptions/Retry/Handlers'),
             ], 'retry-handlers');
-
-            // Publish migrations
-            $this->publishes([
-                __DIR__.'/../database/migrations' => database_path('migrations'),
-            ], 'retry-migrations');
         }
     }
 
@@ -104,10 +79,8 @@ class RetryServiceProvider extends ServiceProvider
             Retry::class,
             ExceptionHandlerManager::class,
             RetryablePipeline::class,
-            DeadLetterQueueStorage::class,
             'retry',
             'retryable-pipeline',
-            'retry.dead-letter-queue',
         ];
     }
 }

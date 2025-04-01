@@ -76,29 +76,6 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Dead Letter Queue Configuration
-    |--------------------------------------------------------------------------
-    |
-    | Configure the dead letter queue for handling failed operations
-    | after all retry attempts have been exhausted.
-    |
-    */
-    'dead_letter' => [
-        // Whether to auto-log failures to the dead letter queue
-        'auto_log_failures' => env('RETRY_DLQ_AUTO_LOG', false),
-
-        // Log level for failure logs (emergency, alert, critical, error, warning, notice, info, debug)
-        'log_level' => env('RETRY_DLQ_LOG_LEVEL', 'warning'),
-
-        // Database table for storing dead letters
-        'table' => env('RETRY_DLQ_TABLE', 'retry_dead_letters'),
-
-        // Database connection to use
-        'connection' => env('RETRY_DLQ_CONNECTION', null),
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
     | Response Content Strategy Configuration
     |--------------------------------------------------------------------------
     |
