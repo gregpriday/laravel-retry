@@ -1,6 +1,6 @@
 <?php
 
-namespace GregPriday\LaravelRetry\Tests\Unit;
+namespace GregPriday\LaravelRetry\Tests\Unit\Strategies;
 
 use Generator;
 use GregPriday\LaravelRetry\Contracts\RetryStrategy;
@@ -11,6 +11,7 @@ use GregPriday\LaravelRetry\Strategies\FixedDelayStrategy;
 use GregPriday\LaravelRetry\Strategies\LinearBackoffStrategy;
 use GregPriday\LaravelRetry\Strategies\RateLimitStrategy;
 use GregPriday\LaravelRetry\Tests\TestCase;
+use Illuminate\Support\Facades\RateLimiter;
 use RuntimeException;
 
 class RetryStrategyTest extends TestCase
@@ -178,14 +179,15 @@ class RetryStrategyTest extends TestCase
 
     public function test_rate_limit_strategy_specific_behavior(): void
     {
-        // Reset all rate limiters before starting the test
-        RateLimitStrategy::resetAll();
+        // Clear the rate limiter for this test
+        $storageKey = 'test-rate-limit';
+        RateLimiter::clear($storageKey);
 
         $strategy = new RateLimitStrategy(
             innerStrategy: new FixedDelayStrategy,
             maxAttempts: 3,
             timeWindow: 1,
-            storageKey: 'test-rate-limit' // Use a unique storage key for this test
+            storageKey: $storageKey
         );
 
         // Should allow initial attempts
@@ -203,7 +205,7 @@ class RetryStrategyTest extends TestCase
         $this->assertTrue($strategy->shouldRetry(0, 5, null), 'New attempt should be allowed after window reset');
 
         // Clean up
-        $strategy->reset();
+        RateLimiter::clear($storageKey);
     }
 
     public function test_circuit_breaker_strategy_specific_behavior(): void

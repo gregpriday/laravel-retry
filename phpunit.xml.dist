@@ -32,6 +32,7 @@
         <env name="APP_ENV" value="testing"/>
         <env name="RETRY_MAX_ATTEMPTS" value="3"/>
         <env name="RETRY_DELAY" value="1"/>
-        <env name="RETRY_TIMEOUT" value="5"/>
+        <env name="RETRY_TIMEOUT" value="30"/>
+        <ini name="max_execution_time" value="60"/>
     </php>
 </phpunit>

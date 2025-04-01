@@ -7,16 +7,12 @@ use Throwable;
 
 class CircuitBreakerStrategy implements RetryStrategy
 {
-    private const CIRCUIT_OPEN = 'open';
-
-    private const CIRCUIT_CLOSED = 'closed';
-
-    private const CIRCUIT_HALF_OPEN = 'half-open';
+    private const string CIRCUIT_OPEN = 'open';
+    private const string CIRCUIT_CLOSED = 'closed';
+    private const string CIRCUIT_HALF_OPEN = 'half-open';
 
     private string $state = self::CIRCUIT_CLOSED;
-
     private int $failureCount = 0;
-
     private ?int $openedAt = null;
 
     /**
@@ -30,9 +26,7 @@ class CircuitBreakerStrategy implements RetryStrategy
         protected RetryStrategy $innerStrategy,
         protected int $failureThreshold = 5,
         protected int $resetTimeout = 60
-    ) {
-        $this->closeCircuit(); // Ensure we start in a clean state
-    }
+    ) {}
 
     /**
      * Calculate the delay for the next retry attempt.
@@ -43,6 +37,8 @@ class CircuitBreakerStrategy implements RetryStrategy
      */
     public function getDelay(int $attempt, float $baseDelay): int
     {
+        // Delay calculation doesn't depend on circuit state directly,
+        // but relies on the inner strategy.
         return $this->innerStrategy->getDelay($attempt, $baseDelay);
     }
 
@@ -55,81 +51,91 @@ class CircuitBreakerStrategy implements RetryStrategy
      */
     public function shouldRetry(int $attempt, int $maxAttempts, ?Throwable $lastException = null): bool
     {
-        // First check if we've exceeded max attempts
-        if (! $this->innerStrategy->shouldRetry($attempt, $maxAttempts, $lastException)) {
-            return false;
+        // 1. Process the outcome of the *previous* attempt to update the state.
+        // This handles transitions like CLOSED -> OPEN, HALF_OPEN -> CLOSED, HALF_OPEN -> OPEN.
+        $this->updateStateBasedOnLastOutcome($lastException);
+
+        // 2. Check if we should transition from OPEN to HALF_OPEN *now* based on time.
+        if ($this->state === self::CIRCUIT_OPEN && $this->shouldAttemptReset()) {
+            // Timeout has passed, transition to half-open *before* making the decision
+            // for the current attempt.
+            $this->state = self::CIRCUIT_HALF_OPEN;
+            $this->resetFailureCount(); // Reset for the single test attempt
+            // Note: openedAt remains set until the circuit closes successfully,
+            // indicating when the last OPEN period started.
         }
 
-        // Handle OPEN circuit
+        // 3. Make the retry decision based on the *current* (potentially updated) state.
         if ($this->state === self::CIRCUIT_OPEN) {
-            if ($this->shouldAttemptReset()) {
-                $this->setCircuitState(self::CIRCUIT_HALF_OPEN);
-
-                return true;
-            }
-
+            // Still open (timeout hasn't passed or transition didn't happen)
+            // Deny retry immediately.
             return false;
         }
 
-        // Handle HALF-OPEN circuit
+        // If state is CLOSED or HALF_OPEN, defer to the inner strategy
+        // (which respects maxAttempts). The HALF_OPEN state allows exactly one
+        // attempt through the inner strategy check. The outcome of this attempt
+        // will be processed by updateStateBasedOnLastOutcome in the *next* call.
+        return $this->innerStrategy->shouldRetry($attempt, $maxAttempts, $lastException);
+    }
+
+    /**
+     * Updates the circuit state based on the outcome of the *last* completed attempt.
+     * This determines the state *before* the next attempt runs.
+     */
+    private function updateStateBasedOnLastOutcome(?Throwable $lastException): void
+    {
         if ($this->state === self::CIRCUIT_HALF_OPEN) {
-            if ($lastException) {
+            if ($lastException !== null) {
+                // Failure during HALF_OPEN attempt -> Re-open the circuit
                 $this->openCircuit();
-
-                return false;
+            } else {
+                // Success during HALF_OPEN attempt -> Close the circuit
+                $this->closeCircuit();
             }
-            $this->closeCircuit(); // Success in half-open state closes the circuit
+        } elseif ($this->state === self::CIRCUIT_CLOSED) {
+            if ($lastException !== null) {
+                // Failure during CLOSED state
+                $this->failureCount++; // Increment first to reflect this failure
 
-            return true;
-        }
-
-        // Handle CLOSED circuit
-        if ($lastException) {
-            $this->incrementFailureCount();
-            if ($this->failureCount > $this->failureThreshold) {
-                $this->openCircuit();
-
-                return false;
+                // Check if the failure count *now exceeds* the threshold
+                if ($this->failureCount > $this->failureThreshold) {
+                    $this->openCircuit(); // Open circuit
+                }
+                // If not met, remain CLOSED, failure count is already updated.
+            } else {
+                // Success during CLOSED state
+                $this->resetFailureCount(); // Reset count on success
             }
-        } else {
-            $this->resetFailureCount(); // Reset on success
         }
-
-        return true;
+        // No state change logic needed here if state is already OPEN.
+        // The transition *out* of OPEN happens in shouldRetry based on time.
     }
 
-    protected function setCircuitState(string $state): void
+    private function openCircuit(): void
     {
-        $this->state = $state;
-        if ($state === self::CIRCUIT_OPEN) {
-            $this->openedAt = time();
-        }
+        $this->state = self::CIRCUIT_OPEN;
+        $this->openedAt = now()->getTimestamp();
+        // Failure count becomes irrelevant in OPEN state, will be reset on transition
     }
 
-    protected function incrementFailureCount(): void
+    private function closeCircuit(): void
     {
-        $this->failureCount++;
+        $this->state = self::CIRCUIT_CLOSED;
+        $this->openedAt = null;
+        $this->resetFailureCount();
     }
 
-    protected function resetFailureCount(): void
+    private function resetFailureCount(): void
     {
         $this->failureCount = 0;
     }
 
-    protected function openCircuit(): void
+    private function shouldAttemptReset(): bool
     {
-        $this->setCircuitState(self::CIRCUIT_OPEN);
-    }
-
-    protected function closeCircuit(): void
-    {
-        $this->setCircuitState(self::CIRCUIT_CLOSED);
-        $this->resetFailureCount();
-    }
-
-    protected function shouldAttemptReset(): bool
-    {
-        return $this->openedAt && (time() - $this->openedAt) >= $this->resetTimeout;
+        // Use now()->getTimestamp() instead of time()
+        // Ensure openedAt is not null before comparison
+        return $this->openedAt !== null && (now()->getTimestamp() - $this->openedAt) >= $this->resetTimeout;
     }
 
     /**
@@ -148,3 +154,4 @@ class CircuitBreakerStrategy implements RetryStrategy
         return $this->failureCount;
     }
 }
+

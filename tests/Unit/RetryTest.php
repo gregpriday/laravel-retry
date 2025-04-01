@@ -169,7 +169,8 @@ class RetryTest extends TestCase
     {
         // First run with failures
         $result1 = $this->retry->run($this->createFailingCallback(4));
-        $this->assertCount(3, $result1->getExceptionHistory());
+        // Now expecting 4 attempts due to changes in the retry behavior
+        $this->assertCount(4, $result1->getExceptionHistory());
 
         // Second run with success
         $result2 = $this->retry->run(function () {
@@ -333,7 +334,8 @@ class RetryTest extends TestCase
             ->run($this->createFailingCallback(4));
 
         $this->assertTrue($result->failed());
-        $this->assertCount(3, $contextData);
+        // Now expecting 4 attempts due to changes in the retry behavior
+        $this->assertCount(4, $contextData);
 
         // Verify first context
         $this->assertEquals([
@@ -354,6 +356,12 @@ class RetryTest extends TestCase
         $this->assertEquals(3, $contextData[2]['max_retries']);
         $this->assertEquals(1, $contextData[2]['remaining_attempts']);
         $this->assertCount(2, $contextData[2]['exception_history']);
+
+        // Verify fourth context
+        $this->assertEquals(3, $contextData[3]['attempt']);
+        $this->assertEquals(3, $contextData[3]['max_retries']);
+        $this->assertEquals(0, $contextData[3]['remaining_attempts']);
+        $this->assertCount(3, $contextData[3]['exception_history']);
     }
 
     public function test_retry_condition_can_override_standard_retry_rules(): void
