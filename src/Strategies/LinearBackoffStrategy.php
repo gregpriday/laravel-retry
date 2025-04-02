@@ -5,6 +5,12 @@ namespace GregPriday\LaravelRetry\Strategies;
 use GregPriday\LaravelRetry\Contracts\RetryStrategy;
 use Throwable;
 
+/**
+ * LinearBackoffStrategy increases the delay by a fixed amount with each retry attempt.
+ *
+ * This strategy provides predictable, steadily increasing delays (e.g., 1s, 6s, 11s, 16s
+ * if base is 1s and increment is 5s), suitable when a consistent growth rate is desired.
+ */
 class LinearBackoffStrategy implements RetryStrategy
 {
     /**

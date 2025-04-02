@@ -5,6 +5,13 @@ namespace GregPriday\LaravelRetry\Strategies;
 use GregPriday\LaravelRetry\Contracts\RetryStrategy;
 use Throwable;
 
+/**
+ * FibonacciBackoffStrategy increases delay according to the Fibonacci sequence.
+ *
+ * This strategy provides a middle ground between exponential and linear growth,
+ * offering quick initial retries with a more gradual increase over time (e.g., 1s, 1s, 2s, 3s, 5s, 8s).
+ * It supports optional jitter to prevent retry synchronization.
+ */
 class FibonacciBackoffStrategy implements RetryStrategy
 {
     /**

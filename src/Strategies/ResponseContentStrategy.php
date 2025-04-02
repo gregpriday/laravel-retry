@@ -10,6 +10,13 @@ use JsonException;
 use Psr\Http\Message\ResponseInterface;
 use Throwable;
 
+/**
+ * ResponseContentStrategy inspects HTTP response content to determine if a retry is needed.
+ *
+ * This strategy examines the body of HTTP responses (even successful ones with 200 status codes)
+ * to detect temporary errors based on content patterns or JSON error codes. It's ideal for APIs
+ * that signal transient failures within the response body rather than status codes.
+ */
 class ResponseContentStrategy implements RetryStrategy
 {
     /**
@@ -20,7 +27,6 @@ class ResponseContentStrategy implements RetryStrategy
     /**
      * Create a new response content strategy.
      *
-     * @param  float  $baseDelay  Base delay in seconds (can be float)
      * @param  RetryStrategy  $innerStrategy  The wrapped retry strategy
      * @param  array  $retryableContentPatterns  Array of regex patterns to match in response body
      * @param  array  $retryableErrorCodes  Array of error codes in JSON responses that indicate retryable errors
@@ -28,7 +34,6 @@ class ResponseContentStrategy implements RetryStrategy
      * @param  Closure|null  $retryableContentChecker  Custom function to determine if response content is retryable
      */
     public function __construct(
-        protected float $baseDelay,
         protected RetryStrategy $innerStrategy,
         protected array $retryableContentPatterns = [],
         protected array $retryableErrorCodes = [],

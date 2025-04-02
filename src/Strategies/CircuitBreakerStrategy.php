@@ -5,6 +5,15 @@ namespace GregPriday\LaravelRetry\Strategies;
 use GregPriday\LaravelRetry\Contracts\RetryStrategy;
 use Throwable;
 
+/**
+ * CircuitBreakerStrategy implements the Circuit Breaker pattern for retry operations.
+ *
+ * After a defined number of consecutive failures, the circuit "opens" to prevent
+ * additional retry attempts for a specified period. Once the timeout elapses, a single
+ * "test" attempt is allowed in the half-open state. Success closes the circuit, allowing
+ * normal retry behavior, while failure reopens it. This protects downstream services from
+ * cascading failures during outages.
+ */
 class CircuitBreakerStrategy implements RetryStrategy
 {
     private const string CIRCUIT_OPEN = 'open';
@@ -22,13 +31,11 @@ class CircuitBreakerStrategy implements RetryStrategy
     /**
      * Create a new circuit breaker strategy.
      *
-     * @param  float  $baseDelay  Base delay in seconds (can be float)
      * @param  RetryStrategy  $innerStrategy  The wrapped retry strategy
      * @param  int  $failureThreshold  Number of failures before opening circuit
      * @param  float  $resetTimeout  Seconds before attempting reset (half-open)
      */
     public function __construct(
-        protected float $baseDelay,
         protected RetryStrategy $innerStrategy,
         protected int $failureThreshold = 5,
         protected float $resetTimeout = 60.0

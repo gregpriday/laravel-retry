@@ -5,6 +5,13 @@ namespace GregPriday\LaravelRetry\Strategies;
 use GregPriday\LaravelRetry\Contracts\RetryStrategy;
 use Throwable;
 
+/**
+ * ExponentialBackoffStrategy increases the delay between retries exponentially.
+ *
+ * This strategy is the default for most retry scenarios, providing gradually increasing
+ * delays (e.g., 1s, 2s, 4s, 8s) to prevent overwhelming services during recovery.
+ * It supports optional jitter to prevent the "thundering herd" problem.
+ */
 class ExponentialBackoffStrategy implements RetryStrategy
 {
     /**

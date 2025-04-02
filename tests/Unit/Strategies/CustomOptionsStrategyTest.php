@@ -17,10 +17,14 @@ class CustomOptionsStrategyTest extends TestCase
     {
         parent::setUp();
         $this->innerStrategy = $this->createMock(ExponentialBackoffStrategy::class);
-        $this->strategy = new CustomOptionsStrategy($this->innerStrategy, [
-            'custom_option' => 'value',
-            'max_delay'     => 30,
-        ]);
+        $this->strategy = new CustomOptionsStrategy(
+            5.0,
+            $this->innerStrategy,
+            [
+                'custom_option' => 'value',
+                'max_delay'     => 30,
+            ]
+        );
     }
 
     /** @test */
@@ -64,7 +68,7 @@ class CustomOptionsStrategyTest extends TestCase
             return 15;
         });
 
-        $delay = $this->strategy->getDelay(0, 5.0);
+        $delay = $this->strategy->getDelay(0);
 
         $this->assertTrue($called);
         $this->assertEquals(15, $delay);
@@ -75,12 +79,12 @@ class CustomOptionsStrategyTest extends TestCase
     {
         $this->innerStrategy->expects($this->once())
             ->method('getDelay')
-            ->with(0, 5.0)
-            ->willReturn(10);
+            ->with(0)
+            ->willReturn(10.0);
 
-        $delay = $this->strategy->getDelay(0, 5.0);
+        $delay = $this->strategy->getDelay(0);
 
-        $this->assertEquals(10, $delay);
+        $this->assertEquals(10.0, $delay);
     }
 
     /** @test */

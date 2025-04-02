@@ -7,6 +7,7 @@ use GregPriday\LaravelRetry\Exceptions\ExceptionHandlerManager;
 use GregPriday\LaravelRetry\Exceptions\Handlers\GuzzleHandler;
 use GregPriday\LaravelRetry\Retry;
 use GregPriday\LaravelRetry\RetryServiceProvider;
+use GregPriday\LaravelRetry\Strategies\FixedDelayStrategy;
 use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Psr7\Request;
 use Mockery;
@@ -45,8 +46,8 @@ abstract class TestCase extends OrchestraTestCase
         // Create retry instance with explicit configuration
         $this->retry = new Retry(
             maxRetries: 3,
-            retryDelay: 0, // Set to 0 for faster tests
             timeout: 5,
+            strategy: new FixedDelayStrategy(0),
             exceptionManager: $this->exceptionManager
         );
     }

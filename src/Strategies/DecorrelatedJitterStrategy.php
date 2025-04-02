@@ -5,6 +5,13 @@ namespace GregPriday\LaravelRetry\Strategies;
 use GregPriday\LaravelRetry\Contracts\RetryStrategy;
 use Throwable;
 
+/**
+ * DecorrelatedJitterStrategy implements AWS's recommended jitter algorithm for retry timing.
+ *
+ * This strategy provides better distribution of retry attempts compared to simple jitter,
+ * preventing "thundering herd" problems in high-traffic scenarios. It calculates delays
+ * using min(maxDelay, random_between(baseDelay * minFactor, previousDelay * maxFactor)).
+ */
 class DecorrelatedJitterStrategy implements RetryStrategy
 {
     /**

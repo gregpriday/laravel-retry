@@ -36,7 +36,7 @@ class LaravelHttpRetryIntegration
         ) {
             // Determine the base delay from options or use default
             $baseDelay = (float) ($options['base_delay'] ?? 1.0);
-            
+
             // Default to GuzzleResponseStrategy if no strategy provided
             $baseStrategy = $strategy ?? new GuzzleResponseStrategy($baseDelay);
 

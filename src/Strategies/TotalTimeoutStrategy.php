@@ -5,6 +5,14 @@ namespace GregPriday\LaravelRetry\Strategies;
 use GregPriday\LaravelRetry\Contracts\RetryStrategy;
 use Throwable;
 
+/**
+ * TotalTimeoutStrategy enforces a maximum duration for the entire retry operation.
+ *
+ * This strategy ensures that the combined execution time of all retry attempts
+ * (including delays between attempts) does not exceed a defined total timeout.
+ * It's useful for operations with strict time budgets or SLAs, preventing retries
+ * from continuing indefinitely when time constraints are critical.
+ */
 class TotalTimeoutStrategy implements RetryStrategy
 {
     /**
@@ -15,12 +23,10 @@ class TotalTimeoutStrategy implements RetryStrategy
     /**
      * Create a new total timeout strategy.
      *
-     * @param  float  $baseDelay  Base delay in seconds (can be float)
      * @param  RetryStrategy  $innerStrategy  The wrapped retry strategy
      * @param  float  $totalTimeout  Total operation timeout in seconds
      */
     public function __construct(
-        protected float $baseDelay,
         protected RetryStrategy $innerStrategy,
         protected float $totalTimeout
     ) {

@@ -6,19 +6,25 @@ use GregPriday\LaravelRetry\Contracts\RetryStrategy;
 use Illuminate\Support\Facades\RateLimiter;
 use Throwable;
 
+/**
+ * RateLimitStrategy controls the frequency of retry attempts using Laravel's Rate Limiter.
+ *
+ * This strategy ensures that retry operations don't exceed a specified number of attempts
+ * within a defined time window. It's ideal for controlling API request rates, preventing
+ * abuse of external services, and implementing polite retry behavior by respecting rate
+ * limits. Can add additional delay as rate limits are approached.
+ */
 class RateLimitStrategy implements RetryStrategy
 {
     /**
      * Create a new rate limit strategy.
      *
-     * @param  float  $baseDelay  Base delay in seconds (can be float)
      * @param  RetryStrategy  $innerStrategy  The wrapped retry strategy
      * @param  int  $maxAttempts  Maximum attempts per time window
      * @param  int  $timeWindow  Time window in seconds
      * @param  string  $storageKey  Unique key for this rate limiter instance
      */
     public function __construct(
-        protected float $baseDelay,
         protected RetryStrategy $innerStrategy,
         protected int $maxAttempts = 100,
         protected int $timeWindow = 60,

@@ -23,7 +23,7 @@ class RetryStrategyTest extends TestCase
     public function strategyProvider(): Generator
     {
         yield 'exponential backoff' => [
-            'strategy'             => new ExponentialBackoffStrategy(multiplier: 2.0, maxDelay: 30),
+            'strategy'             => new ExponentialBackoffStrategy(baseDelay: 5.0, multiplier: 2.0, maxDelay: 30),
             'expectedDelayPattern' => function (int $attempt, float $baseDelay): array {
                 $delay = $baseDelay * pow(2, $attempt);
 
@@ -35,7 +35,7 @@ class RetryStrategyTest extends TestCase
         ];
 
         yield 'exponential backoff with jitter' => [
-            'strategy'             => new ExponentialBackoffStrategy(multiplier: 2.0, maxDelay: 30, withJitter: true, jitterPercent: 0.2),
+            'strategy'             => new ExponentialBackoffStrategy(baseDelay: 5.0, multiplier: 2.0, maxDelay: 30, withJitter: true, jitterPercent: 0.2),
             'expectedDelayPattern' => function (int $attempt, float $baseDelay): array {
                 $delay = $baseDelay * pow(2, $attempt);
                 $delay = min($delay, 30);
@@ -48,7 +48,7 @@ class RetryStrategyTest extends TestCase
         ];
 
         yield 'exponential backoff with custom jitter' => [
-            'strategy'             => new ExponentialBackoffStrategy(multiplier: 2.0, maxDelay: 30, withJitter: true, jitterPercent: 0.1),
+            'strategy'             => new ExponentialBackoffStrategy(baseDelay: 5.0, multiplier: 2.0, maxDelay: 30, withJitter: true, jitterPercent: 0.1),
             'expectedDelayPattern' => function (int $attempt, float $baseDelay): array {
                 $delay = $baseDelay * pow(2, $attempt);
                 $delay = min($delay, 30);
@@ -61,7 +61,7 @@ class RetryStrategyTest extends TestCase
         ];
 
         yield 'linear backoff' => [
-            'strategy'             => new LinearBackoffStrategy(increment: 5, maxDelay: 30),
+            'strategy'             => new LinearBackoffStrategy(baseDelay: 5.0, increment: 5, maxDelay: 30),
             'expectedDelayPattern' => function (int $attempt, float $baseDelay) {
                 $delay = $baseDelay + (5 * $attempt);
 
@@ -73,7 +73,7 @@ class RetryStrategyTest extends TestCase
         ];
 
         yield 'fibonacci backoff' => [
-            'strategy'             => new FibonacciBackoffStrategy(maxDelay: 30),
+            'strategy'             => new FibonacciBackoffStrategy(baseDelay: 5.0, maxDelay: 30),
             'expectedDelayPattern' => function (int $attempt, float $baseDelay): array {
                 // Calculate Fibonacci number for the attempt
                 $n = $attempt + 1;
@@ -100,7 +100,7 @@ class RetryStrategyTest extends TestCase
         ];
 
         yield 'fibonacci backoff with jitter' => [
-            'strategy'             => new FibonacciBackoffStrategy(maxDelay: 30, withJitter: true, jitterPercent: 0.2),
+            'strategy'             => new FibonacciBackoffStrategy(baseDelay: 5.0, maxDelay: 30, withJitter: true, jitterPercent: 0.2),
             'expectedDelayPattern' => function (int $attempt, float $baseDelay): array {
                 // Calculate Fibonacci number for the attempt
                 $n = $attempt + 1;
@@ -127,7 +127,7 @@ class RetryStrategyTest extends TestCase
         ];
 
         yield 'fibonacci backoff with custom jitter' => [
-            'strategy'             => new FibonacciBackoffStrategy(maxDelay: 30, withJitter: true, jitterPercent: 0.1),
+            'strategy'             => new FibonacciBackoffStrategy(baseDelay: 5.0, maxDelay: 30, withJitter: true, jitterPercent: 0.1),
             'expectedDelayPattern' => function (int $attempt, float $baseDelay): array {
                 // Calculate Fibonacci number for the attempt
                 $n = $attempt + 1;
@@ -154,7 +154,7 @@ class RetryStrategyTest extends TestCase
         ];
 
         yield 'fixed delay' => [
-            'strategy'             => new FixedDelayStrategy,
+            'strategy'             => new FixedDelayStrategy(baseDelay: 5.0),
             'expectedDelayPattern' => function (int $attempt, float $baseDelay) {
                 return [
                     'min' => (int) $baseDelay,
@@ -164,7 +164,7 @@ class RetryStrategyTest extends TestCase
         ];
 
         yield 'fixed delay with jitter' => [
-            'strategy'             => new FixedDelayStrategy(withJitter: true, jitterPercent: 0.2),
+            'strategy'             => new FixedDelayStrategy(baseDelay: 5.0, withJitter: true, jitterPercent: 0.2),
             'expectedDelayPattern' => function (int $attempt, float $baseDelay) {
                 return [
                     'min' => (int) ($baseDelay * 0.79), // Allow a bit more margin for floating point precision
@@ -174,7 +174,7 @@ class RetryStrategyTest extends TestCase
         ];
 
         yield 'fixed delay with custom jitter' => [
-            'strategy'             => new FixedDelayStrategy(withJitter: true, jitterPercent: 0.1),
+            'strategy'             => new FixedDelayStrategy(baseDelay: 5.0, withJitter: true, jitterPercent: 0.1),
             'expectedDelayPattern' => function (int $attempt, float $baseDelay) {
                 return [
                     'min' => (int) floor($baseDelay * 0.89), // Allow a bit more margin for floating point precision
@@ -184,7 +184,7 @@ class RetryStrategyTest extends TestCase
         ];
 
         yield 'decorrelated jitter' => [
-            'strategy'             => new DecorrelatedJitterStrategy(maxDelay: 30),
+            'strategy'             => new DecorrelatedJitterStrategy(baseDelay: 5.0, maxDelay: 30),
             'expectedDelayPattern' => function (int $attempt, float $baseDelay) {
                 return [
                     'min' => (int) $baseDelay,
@@ -195,7 +195,7 @@ class RetryStrategyTest extends TestCase
 
         yield 'rate limit' => [
             'strategy' => new RateLimitStrategy(
-                innerStrategy: new FixedDelayStrategy,
+                innerStrategy: new FixedDelayStrategy(baseDelay: 5.0),
                 maxAttempts: 5,
                 timeWindow: 10
             ),
@@ -209,7 +209,7 @@ class RetryStrategyTest extends TestCase
 
         yield 'circuit breaker' => [
             'strategy' => new CircuitBreakerStrategy(
-                innerStrategy: new FixedDelayStrategy,
+                innerStrategy: new FixedDelayStrategy(baseDelay: 5.0),
                 failureThreshold: 3,
                 resetTimeout: 5
             ),
@@ -229,11 +229,11 @@ class RetryStrategyTest extends TestCase
         RetryStrategy $strategy,
         callable $expectedDelayPattern
     ): void {
-        $baseDelay = 5;
+        $baseDelay = 5.0;
 
         // Test delays for first few attempts
         for ($attempt = 0; $attempt < 3; $attempt++) {
-            $delay = $strategy->getDelay($attempt, $baseDelay);
+            $delay = $strategy->getDelay($attempt);
             $expected = $expectedDelayPattern($attempt, $baseDelay);
 
             $this->assertGreaterThanOrEqual(
@@ -302,7 +302,7 @@ class RetryStrategyTest extends TestCase
         RateLimiter::clear($storageKey);
 
         $strategy = new RateLimitStrategy(
-            innerStrategy: new FixedDelayStrategy,
+            innerStrategy: new FixedDelayStrategy(baseDelay: 5.0),
             maxAttempts: 3,
             timeWindow: 1,
             storageKey: $storageKey
@@ -329,7 +329,7 @@ class RetryStrategyTest extends TestCase
     public function test_circuit_breaker_strategy_specific_behavior(): void
     {
         $strategy = new CircuitBreakerStrategy(
-            innerStrategy: new FixedDelayStrategy,
+            innerStrategy: new FixedDelayStrategy(baseDelay: 5.0),
             failureThreshold: 2,
             resetTimeout: 1
         );

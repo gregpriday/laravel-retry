@@ -7,6 +7,13 @@ use GuzzleHttp\Exception\RequestException;
 use Psr\Http\Message\ResponseInterface;
 use Throwable;
 
+/**
+ * GuzzleResponseStrategy intelligently handles HTTP request retries based on response headers.
+ *
+ * This strategy examines HTTP response headers like Retry-After, X-RateLimit-Reset, and X-Retry-In
+ * to determine appropriate delay timing. It's specifically designed for HTTP clients (like Guzzle)
+ * and falls back to an inner strategy when no retry headers are present.
+ */
 class GuzzleResponseStrategy implements RetryStrategy
 {
     /**

@@ -5,6 +5,13 @@ namespace GregPriday\LaravelRetry\Strategies;
 use GregPriday\LaravelRetry\Contracts\RetryStrategy;
 use Throwable;
 
+/**
+ * FixedDelayStrategy uses the same delay duration for every retry attempt.
+ *
+ * This strategy provides predictable, consistent delays between retries.
+ * It's useful when the expected recovery time is consistent, or when
+ * predictable timing is required. Supports optional jitter.
+ */
 class FixedDelayStrategy implements RetryStrategy
 {
     /**

@@ -20,7 +20,10 @@ class GuzzleResponseStrategyTest extends TestCase
     {
         parent::setUp();
         $this->fallbackStrategy = $this->createMock(ExponentialBackoffStrategy::class);
-        $this->strategy = new GuzzleResponseStrategy($this->fallbackStrategy);
+        $this->strategy = new GuzzleResponseStrategy(
+            baseDelay: 5.0,
+            innerStrategy: $this->fallbackStrategy
+        );
     }
 
     /**
@@ -40,7 +43,7 @@ class GuzzleResponseStrategyTest extends TestCase
         // Configure the test to think this exception was from shouldRetry
         $this->setLastException($exception);
 
-        $delay = $this->strategy->getDelay(0, 5);
+        $delay = $this->strategy->getDelay(0);
 
         if ($isTimeBased) {
             // Allow for a small timing difference (±15 seconds) for time-based tests
@@ -105,7 +108,8 @@ class GuzzleResponseStrategyTest extends TestCase
         // Create the strategy with a max delay of 60 seconds and a mock fallback
         $fallbackStrategy = $this->createMock(ExponentialBackoffStrategy::class);
         $strategy = new GuzzleResponseStrategy(
-            fallbackStrategy: $fallbackStrategy,
+            baseDelay: 5.0,
+            innerStrategy: $fallbackStrategy,
             maxDelay: 60
         );
 
@@ -119,7 +123,7 @@ class GuzzleResponseStrategyTest extends TestCase
         // Call shouldRetry first to set up the context and last exception
         $strategy->shouldRetry(0, 3, $exception);
 
-        $delay = $strategy->getDelay(0, 5);
+        $delay = $strategy->getDelay(0);
 
         $this->assertEquals(60, $delay, 'Should cap delay at maxDelay value');
     }
@@ -132,14 +136,14 @@ class GuzzleResponseStrategyTest extends TestCase
 
         $this->fallbackStrategy->expects($this->once())
             ->method('getDelay')
-            ->with(0, 5.0)
-            ->willReturn(10);
+            ->with(0)
+            ->willReturn(10.0);
 
         $this->setLastException($exception);
 
-        $delay = $this->strategy->getDelay(0, 5);
+        $delay = $this->strategy->getDelay(0);
 
-        $this->assertEquals(10, $delay, 'Should use fallback strategy when no retry headers present');
+        $this->assertEquals(10.0, $delay, 'Should use fallback strategy when no retry headers present');
     }
 
     /**
@@ -203,16 +207,16 @@ class GuzzleResponseStrategyTest extends TestCase
     /** @test */
     public function it_uses_default_exponential_backoff_if_no_fallback_provided(): void
     {
-        $strategy = new GuzzleResponseStrategy;
+        $strategy = new GuzzleResponseStrategy(baseDelay: 5.0);
         $response = new Response(500);
         $exception = $this->createRequestException($response);
 
         $this->setLastException($exception);
 
-        $delay = $strategy->getDelay(0, 5);
+        $delay = $strategy->getDelay(0);
 
         // ExponentialBackoffStrategy with default settings would return 5 for first attempt
-        $this->assertEquals(5, $delay, 'Should use default ExponentialBackoffStrategy');
+        $this->assertEquals(5.0, $delay, 'Should use default ExponentialBackoffStrategy');
     }
 
     /** @test */
@@ -273,13 +277,13 @@ class GuzzleResponseStrategyTest extends TestCase
 
         $this->fallbackStrategy->expects($this->once())
             ->method('getDelay')
-            ->willReturn(10);
+            ->willReturn(10.0);
 
         $this->setLastException($exception);
 
-        $delay = $this->strategy->getDelay(0, 5);
+        $delay = $this->strategy->getDelay(0);
 
-        $this->assertEquals(10, $delay, 'Should fall back when Retry-After header is malformed');
+        $this->assertEquals(10.0, $delay, 'Should fall back when Retry-After header is malformed');
     }
 
     /** @test */
@@ -292,8 +296,8 @@ class GuzzleResponseStrategyTest extends TestCase
 
         $this->setLastException($exception);
 
-        $delay = $this->strategy->getDelay(0, 5);
+        $delay = $this->strategy->getDelay(0);
 
-        $this->assertEquals(30, $delay, 'Should use first value when multiple header values exist');
+        $this->assertEquals(30.0, $delay, 'Should use first value when multiple header values exist');
     }
 }

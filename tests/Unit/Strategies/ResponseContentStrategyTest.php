@@ -22,12 +22,12 @@ class ResponseContentStrategyTest extends TestCase
         $innerStrategy = $this->createMock(RetryStrategy::class);
         $innerStrategy->expects($this->once())
             ->method('getDelay')
-            ->with(2, 5.0)
-            ->willReturn(10);
+            ->with(2)
+            ->willReturn(10.0);
 
         $strategy = new ResponseContentStrategy($innerStrategy);
 
-        $this->assertEquals(10, $strategy->getDelay(2, 5.0));
+        $this->assertEquals(10.0, $strategy->getDelay(2));
     }
 
     /** @test */

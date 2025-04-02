@@ -6,6 +6,14 @@ use Closure;
 use GregPriday\LaravelRetry\Contracts\RetryStrategy;
 use Throwable;
 
+/**
+ * CustomOptionsStrategy allows for flexible, customized retry behavior using closures.
+ *
+ * This strategy provides a way to define specialized retry logic without creating
+ * full strategy classes. It supports custom callbacks for determining both when to retry
+ * and how long to delay between attempts, with additional options passed to the callbacks
+ * for contextual decision-making.
+ */
 class CustomOptionsStrategy implements RetryStrategy
 {
     /**
