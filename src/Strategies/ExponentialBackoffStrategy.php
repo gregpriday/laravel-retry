@@ -11,23 +11,25 @@ class ExponentialBackoffStrategy implements RetryStrategy
      * Create a new exponential backoff strategy.
      *
      * @param  float  $multiplier  The multiplier for each subsequent retry
-     * @param  int|null  $maxDelay  Maximum delay in seconds
+     * @param  float|null  $maxDelay  Maximum delay in seconds
      * @param  bool  $withJitter  Whether to add random jitter to delays
+     * @param  float  $jitterPercent  The percentage of jitter to apply (0.2 means ±20%)
      */
     public function __construct(
         protected float $multiplier = 2.0,
-        protected ?int $maxDelay = null,
-        protected bool $withJitter = false
+        protected ?float $maxDelay = null,
+        protected bool $withJitter = false,
+        protected float $jitterPercent = 0.2
     ) {}
 
     /**
      * Calculate the delay for the next retry attempt.
      *
      * @param  int  $attempt  Current attempt number (0-based)
-     * @param  float  $baseDelay  Base delay in seconds
-     * @return int Delay in seconds
+     * @param  float  $baseDelay  Base delay in seconds (can be float)
+     * @return float Delay in seconds (can have microsecond precision)
      */
-    public function getDelay(int $attempt, float $baseDelay): int
+    public function getDelay(int $attempt, float $baseDelay): float
     {
         // Calculate exponential delay: baseDelay * multiplier^attempt
         $delay = $baseDelay * pow($this->multiplier, $attempt);
@@ -40,7 +42,7 @@ class ExponentialBackoffStrategy implements RetryStrategy
             $delay = min($delay, $this->maxDelay);
         }
 
-        return (int) ceil($delay);
+        return max(0.0, $delay);
     }
 
     /**
@@ -51,8 +53,11 @@ class ExponentialBackoffStrategy implements RetryStrategy
      */
     protected function addJitter(float $delay): float
     {
-        // Add ±20% random jitter
-        return $delay * (mt_rand(80, 120) / 100);
+        // Add jitter based on the configured percentage
+        $jitterRange = $delay * $this->jitterPercent;
+        $jitter = mt_rand(-100, 100) / 100 * $jitterRange;
+
+        return max(0.0, $delay + $jitter);
     }
 
     /**

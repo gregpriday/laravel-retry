@@ -4,6 +4,7 @@ namespace GregPriday\LaravelRetry\Tests\Unit\Strategies;
 
 use GregPriday\LaravelRetry\Strategies\DecorrelatedJitterStrategy;
 use GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy;
+use GregPriday\LaravelRetry\Strategies\FibonacciBackoffStrategy;
 use GregPriday\LaravelRetry\Strategies\FixedDelayStrategy;
 use GregPriday\LaravelRetry\Strategies\LinearBackoffStrategy;
 use GregPriday\LaravelRetry\Tests\TestCase;
@@ -46,10 +47,9 @@ class DelayStrategiesEdgeCasesTest extends TestCase
         $this->assertEquals(0, $strategy->getDelay(1, 0));
         $this->assertEquals(0, $strategy->getDelay(2, 0));
 
-        // Negative base delay will result in negative delay
-        // The implementation doesn't specifically handle negative values
+        // Negative base delay should be handled safely (return 0)
         $delay = $strategy->getDelay(0, -100);
-        $this->assertEquals(ceil(-100), $delay);
+        $this->assertEquals(0, $delay);
     }
 
     /**
@@ -68,13 +68,12 @@ class DelayStrategiesEdgeCasesTest extends TestCase
         $this->assertEquals(100, $strategy->getDelay(1, 0));
         $this->assertEquals(200, $strategy->getDelay(2, 0));
 
-        // Negative base delay will result in negative delay initially
-        // The implementation doesn't specifically handle negative values
-        $this->assertEquals(ceil(-100), $strategy->getDelay(0, -100));
+        // Negative base delay should be handled safely (return max(0, calculated value))
+        $this->assertEquals(0, $strategy->getDelay(0, -100));
 
-        // But with enough increments, it will eventually become positive
-        $this->assertEquals(ceil(-100 + 100), $strategy->getDelay(1, -100));
-        $this->assertEquals(ceil(-100 + 200), $strategy->getDelay(2, -100));
+        // With enough increments, it will eventually become positive
+        $this->assertEquals(0, $strategy->getDelay(1, -100));
+        $this->assertEquals(100, $strategy->getDelay(2, -100));
 
         // Negative increment
         $strategy = new LinearBackoffStrategy(
@@ -82,10 +81,10 @@ class DelayStrategiesEdgeCasesTest extends TestCase
             maxDelay: 1000
         );
 
-        // Base delay will decrease with each attempt
-        $this->assertEquals(ceil(100), $strategy->getDelay(0, 100));
-        $this->assertEquals(ceil(100 - 50), $strategy->getDelay(1, 100));
-        $this->assertEquals(ceil(100 - 100), $strategy->getDelay(2, 100));
+        // Base delay will decrease with each attempt but never go below 0
+        $this->assertEquals(100, $strategy->getDelay(0, 100));
+        $this->assertEquals(50, $strategy->getDelay(1, 100));
+        $this->assertEquals(0, $strategy->getDelay(2, 100));
     }
 
     /**
@@ -155,5 +154,78 @@ class DelayStrategiesEdgeCasesTest extends TestCase
         $this->assertFalse($linear->shouldRetry(0, 0, null));
         $this->assertFalse($fixed->shouldRetry(0, 0, null));
         $this->assertFalse($jitter->shouldRetry(0, 0, null));
+    }
+
+    /**
+     * Test jitter with edge case percentages.
+     */
+    public function test_jitter_with_edge_case_percentages()
+    {
+        // Test with zero jitter percentage
+        $zeroJitterExp = new ExponentialBackoffStrategy(
+            withJitter: true,
+            jitterPercent: 0.0
+        );
+        $zeroJitterFib = new FibonacciBackoffStrategy(
+            withJitter: true,
+            jitterPercent: 0.0
+        );
+        $zeroJitterFixed = new FixedDelayStrategy(
+            withJitter: true,
+            jitterPercent: 0.0
+        );
+
+        // With 0% jitter, the delay should exactly match the calculated value
+        $baseDelay = 100;
+        $this->assertEquals($baseDelay, $zeroJitterExp->getDelay(0, $baseDelay));
+        $this->assertEquals($baseDelay, $zeroJitterFib->getDelay(0, $baseDelay));
+        $this->assertEquals($baseDelay, $zeroJitterFixed->getDelay(0, $baseDelay));
+
+        // Test with very high jitter percentage
+        $highJitterExp = new ExponentialBackoffStrategy(
+            withJitter: true,
+            jitterPercent: 1.0
+        );
+        $highJitterFib = new FibonacciBackoffStrategy(
+            withJitter: true,
+            jitterPercent: 1.0
+        );
+        $highJitterFixed = new FixedDelayStrategy(
+            withJitter: true,
+            jitterPercent: 1.0
+        );
+
+        // With 100% jitter, the delay should be between 0 and 2*baseDelay
+        $delayExp = $highJitterExp->getDelay(0, $baseDelay);
+        $delayFib = $highJitterFib->getDelay(0, $baseDelay);
+        $delayFixed = $highJitterFixed->getDelay(0, $baseDelay);
+
+        $this->assertGreaterThanOrEqual(0, $delayExp);
+        $this->assertLessThanOrEqual(2 * $baseDelay, $delayExp);
+
+        $this->assertGreaterThanOrEqual(0, $delayFib);
+        $this->assertLessThanOrEqual(2 * $baseDelay, $delayFib);
+
+        $this->assertGreaterThanOrEqual(0, $delayFixed);
+        $this->assertLessThanOrEqual(2 * $baseDelay, $delayFixed);
+
+        // Test with withJitter=false but jitterPercent set
+        $noJitterExp = new ExponentialBackoffStrategy(
+            withJitter: false,
+            jitterPercent: 0.5
+        );
+        $noJitterFib = new FibonacciBackoffStrategy(
+            withJitter: false,
+            jitterPercent: 0.5
+        );
+        $noJitterFixed = new FixedDelayStrategy(
+            withJitter: false,
+            jitterPercent: 0.5
+        );
+
+        // Even with jitterPercent set, if withJitter=false, no jitter should be applied
+        $this->assertEquals($baseDelay, $noJitterExp->getDelay(0, $baseDelay));
+        $this->assertEquals($baseDelay, $noJitterFib->getDelay(0, $baseDelay));
+        $this->assertEquals($baseDelay, $noJitterFixed->getDelay(0, $baseDelay));
     }
 }

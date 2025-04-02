@@ -142,8 +142,8 @@ class CircuitBreakerTest extends TestCase
         $this->assertTrue($strategy->shouldRetry(2, 3, null));
 
         // Verify state immediately after processing the success
-        $this->assertEquals('closed', $strategy->getCircuitState(), "State check after success: Should be CLOSED");
-        $this->assertEquals(0, $strategy->getFailureCount(), "Failure count check after success: Should be 0");
+        $this->assertEquals('closed', $strategy->getCircuitState(), 'State check after success: Should be CLOSED');
+        $this->assertEquals(0, $strategy->getFailureCount(), 'Failure count check after success: Should be 0');
 
         // Verify circuit is closed by checking that multiple retries are allowed
         $this->assertTrue($strategy->shouldRetry(2, 3, null));

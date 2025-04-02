@@ -8,19 +8,29 @@ alwaysApply: true
 
 The `copytree ask` command allows you to ask questions about the codebase to understand the project structure, functionality, and implementation details. It analyzes the project and provides AI-powered answers to help you navigate and understand the code.
 
-You can start all complex agentic workflows by running the `copytree ask` command, or run it after encountering test errors to establish possible causes. This will help you establish a baseline understanding of the codebase in a way that helps you start tackling complex problems. It's also particularly useful to ask where to add debugging code for stubborn issues.
+You can start all complex agentic workflows by running the `copytree ask` command, or run it after encountering test errors to establish possible causes. This will help you establish a baseline understanding of the codebase in a way that helps you tackle complex problems. It is also particularly useful to ask where to add debugging code for stubborn issues.
 
-Always use `--state=<state_key>` to ask a follow up question. This will let copytree maintain context and understanding across multiple queries.
+Always use `--state=<state_key>` to ask a follow-up question. This lets `copytree` maintain context and understanding across multiple queries.
 
 The `copytree ask` command is also powerful as a last check before finishing a major change.
 
 ## Command Usage
 
+To ask a question about the codebase, use the `copytree ask` command with the question provided as an inline argument enclosed in double quotes:
+
 ```bash
-copytree ask 'Your question about the codebase' [--state[=<state_key>]] [other options...]
+copytree ask "Your question here"
 ```
 
-Always use single quotes to surround a question. This command must be executed from the project directory. It will analyze the codebase and provide intelligent responses about the code's structure, functionality, and specific implementation details.
+**Important:** To avoid issues with escaping special characters, do not use apostrophes (`'`), dollar signs (`$`), backslashes (`\`), or other special characters in your questions. The `copytree ask` command uses an advanced language model that can understand questions without these characters, so keep them simple and clear. For example, write "Let us proceed" instead of "Let’s proceed" and avoid symbols like `$variable`.
+
+For example:
+
+```bash
+copytree ask "What is the main purpose of this project and how is it structured?"
+```
+
+This command must be executed from the project directory. It will analyze the codebase and provide intelligent responses about the code’s structure, functionality, and specific implementation details.
 
 ## State Management
 
@@ -28,99 +38,99 @@ By default, `copytree ask` is stateless, meaning each question is analyzed indep
 
 You can optionally maintain conversation history using the `--state` flag. This is useful when you need to ask follow-up questions or perform a series of related commands where context is important. Start a state whenever you expect to ask follow-up questions or need to maintain context across multiple queries.
 
-Generally, it's safer to use stateful mode for most interactions, as it allows you to build on previous context and maintain a coherent conversation. Only use stateless mode for isolated questions where you know you won't need follow up questions.
+Generally, it is safer to use stateful mode for most interactions, as it allows you to build on previous context and maintain a coherent conversation. Only use stateless mode for isolated questions where you know you won’t need follow-up questions.
 
-* **Starting a New Stateful Conversation:**
-    To begin a new conversation and generate a state key, use the flag without a value:
-    ```bash
-    copytree ask 'Initial question about the project' --state
-    ```
-    After the command completes, it will output the new state key like this: `Saved interaction to state: <state_key>`. Note this key for future use.
+- **Starting a New Stateful Conversation:**
+  To begin a new conversation and generate a state key, use the flag without a value:
+  ```bash
+  copytree ask "Initial question about the project" --state
+  ```
+  After the command completes, it will output the new state key like this: `Saved interaction to state: <state_key>`. Note this key for future use.
 
-* **Continuing an Existing Conversation:**
-    To continue a conversation using a previously generated key, provide the key as the value for the flag:
-    ```bash
-    copytree ask 'Follow-up question based on previous context' --state=<state_key>
-    ```
-    Replace `<state_key>` with the key you noted earlier. The command will load the previous history associated with that key.
+- **Continuing an Existing Conversation:**
+  To continue a conversation using a previously generated key, provide the key as the value for the flag:
+  ```bash
+  copytree ask "Follow-up question based on previous context" --state=<state_key>
+  ```
+  Replace `<state_key>` with the key you noted earlier. The command will load the previous history associated with that key.
 
 **When to use state:** Only maintain state when you anticipate a multi-step workflow where subsequent commands build upon the context established by earlier ones. For isolated questions, running in stateless mode (without the `--state` flag) is sufficient.
 
 ## Examples
 
-Here are examples of the types of questions you can ask using the `copytree ask` command:
+Here are examples of the types of questions you can ask using the `copytree ask` command. All examples use the inline argument method with double quotes and avoid special characters:
 
-* **Error Troubleshooting:**
-    ```bash
-    copytree ask 'When running the test FileOutputRendererTest::test_render_file_with_max_lines_truncation, I\'m seeing the error \'Undefined index: mime-type\'. What might be causing this error?'
-    ```
+- **Error Troubleshooting:**
+  ```bash
+  copytree ask "When running the test FileOutputRendererTest::test_render_file_with_max_lines_truncation I am seeing the error Undefined index: mime-type. What might be causing this error?"
+  ```
 
-* **Understanding Code Flow:**
-    ```bash
-    copytree ask 'How does the pipeline process files from initial loading to final output?'
-    ```
+- **Understanding Code Flow:**
+  ```bash
+  copytree ask "How does the pipeline process files from initial loading to final output?"
+  ```
 
-* **Finding Implementations:**
-    ```bash
-    copytree ask 'Where is the GitHubUrlHandler class implemented and what does it do?'
-    ```
+- **Finding Implementations:**
+  ```bash
+  copytree ask "Where is the GitHubUrlHandler class implemented and what does it do?"
+  ```
 
-* **Architecture Questions:**
-    ```bash
-    copytree ask 'What\'s the relationship between the Transformer classes and the Pipeline stages?'
-    ```
+- **Architecture Questions:**
+  ```bash
+  copytree ask "What is the relationship between the Transformer classes and the Pipeline stages?"
+  ```
 
-* **Debugging Issues:**
-    ```bash
-    copytree ask 'The AIFilterStage is throwing an exception with message \'Invalid JSON response\'. What could be causing this?'
-    ```
+- **Debugging Issues:**
+  ```bash
+  copytree ask "The AIFilterStage is throwing an exception with message Invalid JSON response. What could be causing this?"
+  ```
 
-* **Feature Understanding:**
-    ```bash
-    copytree ask 'How does this project handle the transformation of different file types?'
-    ```
+- **Feature Understanding:**
+  ```bash
+  copytree ask "How does this project handle the transformation of different file types?"
+  ```
 
-* **Project Overview:**
-    ```bash
-    copytree ask 'What is the main purpose of this project and how is it structured?'
-    ```
+- **Project Overview:**
+  ```bash
+  copytree ask "What is the main purpose of this project and how is it structured?"
+  ```
 
-* **Asking where to add debugging code:**
-    ```bash
-    copytree ask 'I\'m getting the error \'Undefined index: mime-type\' in the FileOutputRendererTest::test_render_file_with_max_lines_truncation test. Where should I add debugging code to investigate this issue?'
-    ```
+- **Asking where to add debugging code:**
+  ```bash
+  copytree ask "I am getting the error Undefined index: mime-type in the FileOutputRendererTest::test_render_file_with_max_lines_truncation test. Where should I add debugging code to investigate this issue?"
+  ```
 
-* **Checking that a change has been properly implemented:**
-    ```bash
-    copytree ask 'I\'ve just implemented the new GitHubUrlHandler class. Can you confirm that it\'s been correctly added and integrated into the project?'
-    ```
+- **Checking that a change has been properly implemented:**
+  ```bash
+  copytree ask "I have just implemented the new GitHubUrlHandler class. Can you confirm that it has been correctly added and integrated into the project?"
+  ```
 
-* **Asking for an implementation strategy:**
-    ```bash
-    copytree ask 'What\'s the best way to implement feature xxxxx that requires changes to multiple classes? Please give a detailed step by step strategy.'
-    ```
+- **Asking for an implementation strategy:**
+  ```bash
+  copytree ask "I need to implement feature xxxxx. It requires changes to multiple classes. What is the best way to approach this? Please provide a step-by-step strategy."
+  ```
 
-* **Using State for Follow-up:**
-    ```bash
-    # First command, starting a new state
-    copytree ask 'Where is the main entry point for processing user requests?' --state
-    # Note the output: Saved interaction to state: abc123xyz
+- **Using State for Follow-up:**
+  ```bash
+  # First command, starting a new state
+  copytree ask "Where is the main entry point for processing user requests?" --state
+  # Note the output: Saved interaction to state: abc123xyz
 
-    # Second command, continuing the conversation
-    copytree ask 'Based on that entry point, how is authentication handled?' --state=abc123xyz
-    ```
+  # Second command, continuing the conversation
+  copytree ask "Based on that entry point how is authentication handled?" --state=abc123xyz
+  ```
 
 ## When to Use
 
 Use the `copytree ask` command when you need to:
 
-1.  Understand code behavior and architecture
-2.  Troubleshoot errors and issues in the code
-3.  Find relevant files and classes for specific functionality
-4.  Get insights about how different components interact
-5.  Diagnose errors in tests or runtime issues
-6.  Get context on specific implementation details
-7.  Ask follow-up questions requiring context from previous interactions (using `--state`)
+1. Understand code behavior and architecture
+2. Troubleshoot errors and issues in the code
+3. Find relevant files and classes for specific functionality
+4. Get insights about how different components interact
+5. Diagnose errors in tests or runtime issues
+6. Get context on specific implementation details
+7. Ask follow-up questions requiring context from previous interactions (using `--state`)
 
 Make ample use of `copytree ask` to speed up your workflow and overall planning abilities.
 
@@ -130,8 +140,8 @@ The command is especially useful for quickly getting insights about unfamiliar c
 
 Avoid using the `copytree ask` command in these situations:
 
-1.  When you need to find specific text or identifiers (use `grep`, `find`, or IDE search instead)
-2.  When you just need to locate a file by name (use `find` or IDE file navigation)
-3.  For simple questions about syntax or language features (use documentation instead)
+1. When you need to find specific text or identifiers (use `grep`, `find`, or IDE search instead)
+2. When you just need to locate a file by name (use `find` or IDE file navigation)
+3. For simple questions about syntax or language features (use documentation instead)
 
 For simple text searches, file location, or pattern matching, traditional tools like `grep` or `find` are more appropriate.

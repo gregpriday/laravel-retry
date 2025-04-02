@@ -100,7 +100,7 @@ class RetryEventsTest extends TestCase
     {
         $retryEvent = null;
         $retry = new Retry(maxRetries: 2, retryDelay: 0, timeout: 5);
-        
+
         // Set up metadata before running the operation
         $retry->withMetadata(['test_key' => 'test_value']);
 
@@ -117,6 +117,7 @@ class RetryEventsTest extends TestCase
                     $attempt++;
                     throw $this->createGuzzleException('Test error');
                 }
+
                 return 'success';
             });
         } catch (Exception $e) {
@@ -153,7 +154,7 @@ class RetryEventsTest extends TestCase
         $failureEvent = null;
 
         $retry = new Retry(maxRetries: 2, retryDelay: 0, timeout: 5);
-        
+
         // Set up metadata before running the operation
         $retry->withMetadata(['source' => 'test']);
 
@@ -176,6 +177,7 @@ class RetryEventsTest extends TestCase
                     $attempt++;
                     throw $this->createGuzzleException('Test error');
                 }
+
                 return 'success';
             });
         } catch (Exception $e) {

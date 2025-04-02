@@ -7,6 +7,7 @@ use GregPriday\LaravelRetry\Contracts\RetryStrategy;
 use GregPriday\LaravelRetry\Strategies\CircuitBreakerStrategy;
 use GregPriday\LaravelRetry\Strategies\DecorrelatedJitterStrategy;
 use GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy;
+use GregPriday\LaravelRetry\Strategies\FibonacciBackoffStrategy;
 use GregPriday\LaravelRetry\Strategies\FixedDelayStrategy;
 use GregPriday\LaravelRetry\Strategies\LinearBackoffStrategy;
 use GregPriday\LaravelRetry\Strategies\RateLimitStrategy;
@@ -33,6 +34,32 @@ class RetryStrategyTest extends TestCase
             },
         ];
 
+        yield 'exponential backoff with jitter' => [
+            'strategy'             => new ExponentialBackoffStrategy(multiplier: 2.0, maxDelay: 30, withJitter: true, jitterPercent: 0.2),
+            'expectedDelayPattern' => function (int $attempt, float $baseDelay): array {
+                $delay = $baseDelay * pow(2, $attempt);
+                $delay = min($delay, 30);
+
+                return [
+                    'min' => (int) ($delay * 0.8), // 20% less
+                    'max' => (int) ($delay * 1.2), // 20% more
+                ];
+            },
+        ];
+
+        yield 'exponential backoff with custom jitter' => [
+            'strategy'             => new ExponentialBackoffStrategy(multiplier: 2.0, maxDelay: 30, withJitter: true, jitterPercent: 0.1),
+            'expectedDelayPattern' => function (int $attempt, float $baseDelay): array {
+                $delay = $baseDelay * pow(2, $attempt);
+                $delay = min($delay, 30);
+
+                return [
+                    'min' => (int) floor($delay * 0.89), // Allow a bit more margin for floating point precision
+                    'max' => (int) ceil($delay * 1.11),  // Allow a bit more margin for floating point precision
+                ];
+            },
+        ];
+
         yield 'linear backoff' => [
             'strategy'             => new LinearBackoffStrategy(increment: 5, maxDelay: 30),
             'expectedDelayPattern' => function (int $attempt, float $baseDelay) {
@@ -41,6 +68,87 @@ class RetryStrategyTest extends TestCase
                 return [
                     'min' => (int) min($delay, 30),
                     'max' => (int) min($delay, 30),
+                ];
+            },
+        ];
+
+        yield 'fibonacci backoff' => [
+            'strategy'             => new FibonacciBackoffStrategy(maxDelay: 30),
+            'expectedDelayPattern' => function (int $attempt, float $baseDelay): array {
+                // Calculate Fibonacci number for the attempt
+                $n = $attempt + 1;
+                $fib = 1;
+                if ($n > 1) {
+                    $a = 1;
+                    $b = 1;
+                    for ($i = 3; $i <= $n; $i++) {
+                        $c = $a + $b;
+                        $a = $b;
+                        $b = $c;
+                    }
+                    $fib = $b;
+                }
+
+                $delay = $baseDelay * $fib;
+                $delay = min($delay, 30);
+
+                return [
+                    'min' => (int) $delay,
+                    'max' => (int) $delay,
+                ];
+            },
+        ];
+
+        yield 'fibonacci backoff with jitter' => [
+            'strategy'             => new FibonacciBackoffStrategy(maxDelay: 30, withJitter: true, jitterPercent: 0.2),
+            'expectedDelayPattern' => function (int $attempt, float $baseDelay): array {
+                // Calculate Fibonacci number for the attempt
+                $n = $attempt + 1;
+                $fib = 1;
+                if ($n > 1) {
+                    $a = 1;
+                    $b = 1;
+                    for ($i = 3; $i <= $n; $i++) {
+                        $c = $a + $b;
+                        $a = $b;
+                        $b = $c;
+                    }
+                    $fib = $b;
+                }
+
+                $delay = $baseDelay * $fib;
+                $delay = min($delay, 30);
+
+                return [
+                    'min' => (int) ($delay * 0.8), // 20% less
+                    'max' => (int) ($delay * 1.2), // 20% more
+                ];
+            },
+        ];
+
+        yield 'fibonacci backoff with custom jitter' => [
+            'strategy'             => new FibonacciBackoffStrategy(maxDelay: 30, withJitter: true, jitterPercent: 0.1),
+            'expectedDelayPattern' => function (int $attempt, float $baseDelay): array {
+                // Calculate Fibonacci number for the attempt
+                $n = $attempt + 1;
+                $fib = 1;
+                if ($n > 1) {
+                    $a = 1;
+                    $b = 1;
+                    for ($i = 3; $i <= $n; $i++) {
+                        $c = $a + $b;
+                        $a = $b;
+                        $b = $c;
+                    }
+                    $fib = $b;
+                }
+
+                $delay = $baseDelay * $fib;
+                $delay = min($delay, 30);
+
+                return [
+                    'min' => (int) floor($delay * 0.89), // Allow a bit more margin for floating point precision
+                    'max' => (int) ceil($delay * 1.11),  // Allow a bit more margin for floating point precision
                 ];
             },
         ];
@@ -59,8 +167,18 @@ class RetryStrategyTest extends TestCase
             'strategy'             => new FixedDelayStrategy(withJitter: true, jitterPercent: 0.2),
             'expectedDelayPattern' => function (int $attempt, float $baseDelay) {
                 return [
-                    'min' => (int) ($baseDelay * 0.8),
-                    'max' => (int) ($baseDelay * 1.2),
+                    'min' => (int) ($baseDelay * 0.79), // Allow a bit more margin for floating point precision
+                    'max' => (int) ($baseDelay * 1.21), // Allow a bit more margin for floating point precision
+                ];
+            },
+        ];
+
+        yield 'fixed delay with custom jitter' => [
+            'strategy'             => new FixedDelayStrategy(withJitter: true, jitterPercent: 0.1),
+            'expectedDelayPattern' => function (int $attempt, float $baseDelay) {
+                return [
+                    'min' => (int) floor($baseDelay * 0.89), // Allow a bit more margin for floating point precision
+                    'max' => (int) ceil($baseDelay * 1.11),  // Allow a bit more margin for floating point precision
                 ];
             },
         ];

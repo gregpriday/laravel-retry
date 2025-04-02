@@ -16,11 +16,11 @@ class TotalTimeoutStrategy implements RetryStrategy
      * Create a new total timeout strategy.
      *
      * @param  RetryStrategy  $innerStrategy  The wrapped retry strategy
-     * @param  int  $totalTimeout  Total operation timeout in seconds
+     * @param  float  $totalTimeout  Total operation timeout in seconds
      */
     public function __construct(
         protected RetryStrategy $innerStrategy,
-        protected int $totalTimeout
+        protected float $totalTimeout
     ) {
         $this->startTime = microtime(true);
     }
@@ -29,10 +29,10 @@ class TotalTimeoutStrategy implements RetryStrategy
      * Calculate the delay for the next retry attempt.
      *
      * @param  int  $attempt  Current attempt number (0-based)
-     * @param  float  $baseDelay  Base delay in seconds
-     * @return int Delay in seconds
+     * @param  float  $baseDelay  Base delay in seconds (can be float)
+     * @return float Delay in seconds (can have microsecond precision)
      */
-    public function getDelay(int $attempt, float $baseDelay): int
+    public function getDelay(int $attempt, float $baseDelay): float
     {
         // Get the requested delay from the inner strategy
         $requestedDelay = $this->innerStrategy->getDelay($attempt, $baseDelay);
@@ -46,11 +46,11 @@ class TotalTimeoutStrategy implements RetryStrategy
         // If we have less time remaining than the requested delay, adjust the delay
         if ($remainingTime <= 0) {
             // No time left, don't delay at all (though we probably won't retry)
-            return 0;
+            return 0.0;
         } elseif ($remainingTime < $requestedDelay) {
             // Use the remaining time as the delay (leave a small buffer of 0.1s
             // to account for execution overhead and prevent potentially exceeding the timeout)
-            return max(0, (int) floor($remainingTime - 0.1));
+            return max(0.0, $remainingTime - 0.1);
         }
 
         // Otherwise, use the delay requested by the inner strategy
@@ -87,7 +87,7 @@ class TotalTimeoutStrategy implements RetryStrategy
     /**
      * Get the total timeout in seconds.
      */
-    public function getTotalTimeout(): int
+    public function getTotalTimeout(): float
     {
         return $this->totalTimeout;
     }

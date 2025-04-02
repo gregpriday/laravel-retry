@@ -5,16 +5,14 @@ namespace Tests\Unit\Strategies;
 use GregPriday\LaravelRetry\Contracts\RetryStrategy;
 use GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy;
 use GregPriday\LaravelRetry\Strategies\ResponseContentStrategy;
-use PHPUnit\Framework\TestCase;
-use ReflectionClass;
-use ReflectionProperty;
-use RuntimeException;
-use Mockery;
-use Psr\Http\Message\ResponseInterface;
 use GuzzleHttp\Exception\RequestException;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
+use Mockery;
+use PHPUnit\Framework\TestCase;
+use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamInterface;
+use ReflectionClass;
 
 class ResponseContentStrategyTest extends TestCase
 {
@@ -230,6 +228,7 @@ class ResponseContentStrategyTest extends TestCase
         $response = Mockery::mock(ResponseInterface::class);
         $response->shouldReceive('getBody')->andReturn($stream)->byDefault();
         $response->shouldReceive('getStatusCode')->andReturn($statusCode)->byDefault();
+
         return $response;
     }
 

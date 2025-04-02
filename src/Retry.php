@@ -84,7 +84,7 @@ class Retry
      */
     public function __construct(
         protected ?int $maxRetries = null,
-        protected ?int $retryDelay = null,
+        protected ?float $retryDelay = null,
         protected ?int $timeout = null,
         protected ?Closure $progressCallback = null,
         protected ?RetryStrategy $strategy = null,
@@ -110,7 +110,7 @@ class Retry
      */
     public static function make(
         ?int $maxRetries = null,
-        ?int $retryDelay = null,
+        ?float $retryDelay = null,
         ?int $timeout = null,
         ?RetryStrategy $strategy = null,
         ?ExceptionHandlerManager $exceptionManager = null,
@@ -192,7 +192,7 @@ class Retry
         );
 
         // Apply any pending metadata
-        if (!empty($this->pendingMetadata)) {
+        if (! empty($this->pendingMetadata)) {
             $this->context->addMetadata($this->pendingMetadata);
             $this->pendingMetadata = [];
         }
@@ -345,7 +345,7 @@ class Retry
 
         $delay = $this->strategy->getDelay($attempt, $this->retryDelay);
         $message = sprintf(
-            'Exception caught: Attempt %d failed: %s. Retrying in %d seconds... (%d attempts remaining)',
+            'Exception caught: Attempt %d failed: %s. Retrying in %.3f seconds... (%d attempts remaining)',
             $attempt + 1,
             $e->getMessage(),
             $delay,
@@ -362,7 +362,8 @@ class Retry
 
         // Only sleep if delay is positive (important for tests that set delay to 0)
         if ($delay > 0) {
-            sleep($delay);
+            // Use usleep for microsecond precision
+            usleep((int) ($delay * 1_000_000));
         }
     }
 
@@ -420,7 +421,7 @@ class Retry
     /**
      * Set the retry delay.
      */
-    public function retryDelay(int $seconds): self
+    public function retryDelay(float $seconds): self
     {
         $this->retryDelay = $seconds;
 
@@ -456,7 +457,7 @@ class Retry
     /**
      * Get the current retry delay.
      */
-    public function getRetryDelay(): int
+    public function getRetryDelay(): float
     {
         return $this->retryDelay;
     }
@@ -497,7 +498,7 @@ class Retry
     /**
      * Dispatch the RetryingOperationEvent.
      */
-    protected function dispatchRetryingOperationEvent(int $attempt, int $delay, Throwable $exception): void
+    protected function dispatchRetryingOperationEvent(int $attempt, float $delay, Throwable $exception): void
     {
         if (config('retry.dispatch_events', true)) {
             $event = new RetryingOperationEvent(

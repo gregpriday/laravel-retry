@@ -8,11 +8,15 @@ use Throwable;
 class CircuitBreakerStrategy implements RetryStrategy
 {
     private const string CIRCUIT_OPEN = 'open';
+
     private const string CIRCUIT_CLOSED = 'closed';
+
     private const string CIRCUIT_HALF_OPEN = 'half-open';
 
     private string $state = self::CIRCUIT_CLOSED;
+
     private int $failureCount = 0;
+
     private ?int $openedAt = null;
 
     /**
@@ -20,22 +24,22 @@ class CircuitBreakerStrategy implements RetryStrategy
      *
      * @param  RetryStrategy  $innerStrategy  The wrapped retry strategy
      * @param  int  $failureThreshold  Number of failures before opening circuit
-     * @param  int  $resetTimeout  Seconds before attempting reset (half-open)
+     * @param  float  $resetTimeout  Seconds before attempting reset (half-open)
      */
     public function __construct(
         protected RetryStrategy $innerStrategy,
         protected int $failureThreshold = 5,
-        protected int $resetTimeout = 60
+        protected float $resetTimeout = 60.0
     ) {}
 
     /**
      * Calculate the delay for the next retry attempt.
      *
      * @param  int  $attempt  Current attempt number (0-based)
-     * @param  float  $baseDelay  Base delay in seconds
-     * @return int Delay in seconds
+     * @param  float  $baseDelay  Base delay in seconds (can be float)
+     * @return float Delay in seconds (can have microsecond precision)
      */
-    public function getDelay(int $attempt, float $baseDelay): int
+    public function getDelay(int $attempt, float $baseDelay): float
     {
         // Delay calculation doesn't depend on circuit state directly,
         // but relies on the inner strategy.
@@ -153,5 +157,12 @@ class CircuitBreakerStrategy implements RetryStrategy
     {
         return $this->failureCount;
     }
-}
 
+    /**
+     * Get the reset timeout in seconds.
+     */
+    public function getResetTimeout(): float
+    {
+        return $this->resetTimeout;
+    }
+}

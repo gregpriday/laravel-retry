@@ -90,10 +90,10 @@ class CustomOptionsStrategy implements RetryStrategy
     /**
      * {@inheritdoc}
      */
-    public function getDelay(int $attempt, float $baseDelay): int
+    public function getDelay(int $attempt, float $baseDelay): float
     {
         if ($this->delayCallback !== null) {
-            return (int) ($this->delayCallback)($attempt, $baseDelay, $this->options);
+            return ($this->delayCallback)($attempt, $baseDelay, $this->options);
         }
 
         return $this->innerStrategy->getDelay($attempt, $baseDelay);

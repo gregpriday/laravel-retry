@@ -10,22 +10,24 @@ class FibonacciBackoffStrategy implements RetryStrategy
     /**
      * Create a new Fibonacci backoff strategy.
      *
-     * @param  int|null  $maxDelay  Maximum delay in seconds
+     * @param  float|null  $maxDelay  Maximum delay in seconds
      * @param  bool  $withJitter  Whether to add random jitter to delays
+     * @param  float  $jitterPercent  The percentage of jitter to apply (0.2 means ±20%)
      */
     public function __construct(
-        protected ?int $maxDelay = null,
-        protected bool $withJitter = false
+        protected ?float $maxDelay = null,
+        protected bool $withJitter = false,
+        protected float $jitterPercent = 0.2
     ) {}
 
     /**
      * Calculate the delay for the next retry attempt using Fibonacci sequence.
      *
      * @param  int  $attempt  Current attempt number (0-based)
-     * @param  float  $baseDelay  Base delay in seconds
-     * @return int Delay in seconds
+     * @param  float  $baseDelay  Base delay in seconds (can be float)
+     * @return float Delay in seconds (can have microsecond precision)
      */
-    public function getDelay(int $attempt, float $baseDelay): int
+    public function getDelay(int $attempt, float $baseDelay): float
     {
         // Calculate Fibonacci sequence: 1, 1, 2, 3, 5, 8, 13, 21, 34, ...
         // For attempt 0, we use 1 * baseDelay
@@ -43,7 +45,7 @@ class FibonacciBackoffStrategy implements RetryStrategy
             $delay = min($delay, $this->maxDelay);
         }
 
-        return (int) ceil($delay);
+        return max(0.0, $delay);
     }
 
     /**
@@ -90,8 +92,11 @@ class FibonacciBackoffStrategy implements RetryStrategy
      */
     protected function addJitter(float $delay): float
     {
-        // Add ±20% random jitter
-        return $delay * (mt_rand(80, 120) / 100);
+        // Add jitter based on the configured percentage
+        $jitterRange = $delay * $this->jitterPercent;
+        $jitter = mt_rand(-100, 100) / 100 * $jitterRange;
+
+        return max(0.0, $delay + $jitter);
     }
 
     /**

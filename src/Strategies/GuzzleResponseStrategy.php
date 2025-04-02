@@ -17,29 +17,29 @@ class GuzzleResponseStrategy implements RetryStrategy
     /**
      * Create a new Guzzle response strategy.
      *
-     * @param  RetryStrategy|null  $fallbackStrategy  Strategy to use when no retry headers are present
-     * @param  int  $maxDelay  Maximum delay to allow from headers (in seconds)
+     * @param  RetryStrategy|null  $innerStrategy  Strategy to use when no retry headers are present
+     * @param  float  $maxDelay  Maximum delay to allow from headers (in seconds)
      */
     public function __construct(
-        protected ?RetryStrategy $fallbackStrategy = null,
-        protected int $maxDelay = 300 // 5 minutes max delay
+        protected ?RetryStrategy $innerStrategy = null,
+        protected float $maxDelay = 300.0 // 5 minutes max delay
     ) {
-        $this->fallbackStrategy ??= new ExponentialBackoffStrategy;
+        $this->innerStrategy ??= new ExponentialBackoffStrategy;
     }
 
     /**
      * Calculate the delay for the next retry attempt.
      *
      * @param  int  $attempt  Current attempt number (0-based)
-     * @param  float  $baseDelay  Base delay in seconds
-     * @return int Delay in seconds
+     * @param  float  $baseDelay  Base delay in seconds (can be float)
+     * @return float Delay in seconds (can have microsecond precision)
      */
-    public function getDelay(int $attempt, float $baseDelay): int
+    public function getDelay(int $attempt, float $baseDelay): float
     {
-        // If no exception stored or not a RequestException, use fallback
+        // If no exception stored or not a RequestException, use inner strategy
         if (! $this->lastException || ! ($this->lastException instanceof RequestException)) {
             return min(
-                $this->fallbackStrategy->getDelay($attempt, $baseDelay),
+                $this->innerStrategy->getDelay($attempt, $baseDelay),
                 $this->maxDelay
             );
         }
@@ -47,7 +47,7 @@ class GuzzleResponseStrategy implements RetryStrategy
         $response = $this->getResponseFromException($this->lastException);
         if (! $response) {
             return min(
-                $this->fallbackStrategy->getDelay($attempt, $baseDelay),
+                $this->innerStrategy->getDelay($attempt, $baseDelay),
                 $this->maxDelay
             );
         }
@@ -59,7 +59,7 @@ class GuzzleResponseStrategy implements RetryStrategy
 
         if ($delay === null) {
             return min(
-                $this->fallbackStrategy->getDelay($attempt, $baseDelay),
+                $this->innerStrategy->getDelay($attempt, $baseDelay),
                 $this->maxDelay
             );
         }
@@ -72,9 +72,9 @@ class GuzzleResponseStrategy implements RetryStrategy
      * Get delay from Retry-After header.
      *
      * @param  ResponseInterface  $response  The HTTP response
-     * @return int|null The delay in seconds, or null if header not present/invalid
+     * @return float|null The delay in seconds, or null if header not present/invalid
      */
-    protected function getRetryAfterDelay(ResponseInterface $response): ?int
+    protected function getRetryAfterDelay(ResponseInterface $response): ?float
     {
         if (! $response->hasHeader('Retry-After')) {
             return null;
@@ -92,25 +92,25 @@ class GuzzleResponseStrategy implements RetryStrategy
 
         // If it's numeric, treat it as seconds directly
         if (is_numeric($header)) {
-            return (int) $header;
+            return (float) $header;
         }
 
         // If it's a date, convert to seconds, ensuring UTC interpretation
-        $timestamp = strtotime($header . ' UTC');
+        $timestamp = strtotime($header.' UTC');
         if ($timestamp === false) {
             return null;
         }
 
-        return max(0, $timestamp - time());
+        return max(0.0, (float) ($timestamp - time()));
     }
 
     /**
      * Get delay from X-RateLimit-Reset header.
      *
      * @param  ResponseInterface  $response  The HTTP response
-     * @return int|null The delay in seconds, or null if header not present/invalid
+     * @return float|null The delay in seconds, or null if header not present/invalid
      */
-    protected function getRateLimitResetDelay(ResponseInterface $response): ?int
+    protected function getRateLimitResetDelay(ResponseInterface $response): ?float
     {
         if (! $response->hasHeader('X-RateLimit-Reset')) {
             return null;
@@ -128,16 +128,17 @@ class GuzzleResponseStrategy implements RetryStrategy
 
         // Always treat as Unix timestamp
         $resetTimestamp = (int) $resetTime;
-        return max(0, $resetTimestamp - time());
+
+        return max(0.0, (float) ($resetTimestamp - time()));
     }
 
     /**
      * Get delay from X-Retry-In header.
      *
      * @param  ResponseInterface  $response  The HTTP response
-     * @return int|null The delay in seconds, or null if header not present/invalid
+     * @return float|null The delay in seconds, or null if header not present/invalid
      */
-    protected function getRetryInDelay(ResponseInterface $response): ?int
+    protected function getRetryInDelay(ResponseInterface $response): ?float
     {
         if (! $response->hasHeader('X-Retry-In')) {
             return null;
@@ -150,7 +151,7 @@ class GuzzleResponseStrategy implements RetryStrategy
 
         $delay = trim($headers[0]);
 
-        return is_numeric($delay) ? max(0, (int) $delay) : null;
+        return is_numeric($delay) ? max(0.0, (float) $delay) : null;
     }
 
     /**
@@ -167,11 +168,11 @@ class GuzzleResponseStrategy implements RetryStrategy
         $this->lastException = $lastException;
 
         // First check if we've exceeded max attempts
-        if (! $this->fallbackStrategy->shouldRetry($attempt, $maxAttempts, $lastException)) {
+        if (! $this->innerStrategy->shouldRetry($attempt, $maxAttempts, $lastException)) {
             return false;
         }
 
-        // If no exception or not a RequestException, defer to fallback strategy
+        // If no exception or not a RequestException, defer to inner strategy
         if (! $lastException instanceof RequestException) {
             return true;
         }
@@ -255,21 +256,21 @@ class GuzzleResponseStrategy implements RetryStrategy
     }
 
     /**
-     * Get the fallback strategy being used.
+     * Get the inner strategy being used.
      *
-     * @return RetryStrategy The fallback strategy
+     * @return RetryStrategy The inner strategy
      */
-    public function getFallbackStrategy(): RetryStrategy
+    public function getInnerStrategy(): RetryStrategy
     {
-        return $this->fallbackStrategy;
+        return $this->innerStrategy;
     }
 
     /**
      * Get the maximum delay value.
      *
-     * @return int Maximum delay in seconds
+     * @return float Maximum delay in seconds
      */
-    public function getMaxDelay(): int
+    public function getMaxDelay(): float
     {
         return $this->maxDelay;
     }

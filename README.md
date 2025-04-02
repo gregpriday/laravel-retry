@@ -88,7 +88,7 @@ return [
     // Maximum number of retry attempts
     'max_retries' => env('RETRY_MAX_ATTEMPTS', 3),
 
-    // Base delay between retries in seconds
+    // Base delay between retries in seconds (can be float for microsecond precision)
     'delay' => env('RETRY_DELAY', 5),
 
     // Maximum time per attempt in seconds
@@ -142,13 +142,65 @@ You can customize retry behavior using a fluent interface:
 
 ```php
 $result = Retry::maxRetries(5)    // Override default max retries
-    ->retryDelay(2)               // Override default base delay (seconds)
+    ->retryDelay(0.5)             // Override default base delay (seconds, can use float for milliseconds)
     ->timeout(10)                 // Override default timeout per attempt (seconds)
     ->run(function () {
         // Your operation here
     })
     ->value();                    // Get result directly or throws the final exception
 ```
+
+### Configuring Retry Operations
+
+Laravel Retry provides several configuration options through fluent methods that allow you to customize how retry operations behave. These methods override the global configuration defined in `config/retry.php` for a specific operation:
+
+#### Available Configuration Methods
+
+| Fluent Method | Description | Config Key |
+|---------------|-------------|------------|
+| `maxRetries(int $retries)` | Sets maximum number of retry attempts after the initial try. | `max_retries` |
+| `retryDelay(float $seconds)` | Sets the base delay in seconds used by the retry strategy. Supports float values for microsecond precision. | `delay` |
+| `timeout(int $seconds)` | Sets maximum execution time per attempt in seconds. | `timeout` |
+| `withStrategy(RetryStrategy $strategy)` | Specifies a custom retry strategy to use. | N/A |
+| `retryIf(Closure $condition)` | Custom callback to determine if a retry should occur. | N/A |
+| `retryUnless(Closure $condition)` | Custom callback to determine when a retry should NOT occur. | N/A |
+| `withProgress(Closure $callback)` | Register callback for progress reporting during retries. | N/A |
+| `withEventCallbacks(array $callbacks)` | Register callbacks for retry lifecycle events. | N/A |
+| `withMetadata(array $metadata)` | Add custom data to the retry context. | N/A |
+
+#### Understanding the Base Delay
+
+The `retryDelay()` method sets the *base delay* that retry strategies use as the foundation for their calculations:
+
+- For `ExponentialBackoffStrategy` (default), this is the starting value that gets multiplied exponentially with each attempt
+- For `FixedDelayStrategy`, this is the consistent delay used between each retry 
+- For `LinearBackoffStrategy`, this is the starting point before increments are added
+
+Note: Some strategies, like `ExponentialBackoffStrategy` and `FixedDelayStrategy`, may also add 'jitter' (small, random variations) to the calculated delay. This helps prevent multiple instances retrying simultaneously (the "thundering herd" problem).
+
+Example with different strategies:
+
+```php
+// With ExponentialBackoffStrategy (default)
+// Base delay: 1.5s, then ~3s, then ~6s with jitter
+Retry::retryDelay(1.5)->run($operation);
+
+// With FixedDelayStrategy
+// Every retry will wait 0.5s (plus jitter if enabled)
+Retry::retryDelay(0.5)
+    ->withStrategy(new FixedDelayStrategy())
+    ->run($operation);
+
+// With LinearBackoffStrategy (increment: 1.5)
+// First retry after 1s, then 2.5s, then 4s
+Retry::retryDelay(1.0)
+    ->withStrategy(new LinearBackoffStrategy(increment: 1.5))
+    ->run($operation);
+```
+
+All retry strategies in the library use the base delay as a fundamental input for their delay calculations, including more complex strategies like `DecorrelatedJitterStrategy` or `FibonacciBackoffStrategy`.
+
+This same base delay concept applies when configuring retries via the HTTP Client macros (using the `base_delay` option) or within Pipeline stages (using the `retryDelay` property).
 
 ### HTTP Client Integration
 
@@ -171,7 +223,7 @@ $strategy = new ExponentialBackoffStrategy(
 
 $response = Http::withRetryStrategy($strategy, [
         'max_attempts' => 5,
-        'base_delay' => 2,
+        'base_delay' => 2.5,  // Sets the base delay in seconds (equivalent to Retry::retryDelay()), can use float for microsecond precision
         'timeout' => 15,
     ])
     ->post('https://api.example.com/submit', ['foo' => 'bar']);
@@ -186,7 +238,7 @@ $response = Http::retryWhen(
     [
         'max_attempts' => 4,
         'timeout' => 10,
-        'base_delay' => 1,
+        'base_delay' => 0.75,  // Sets the base delay in seconds (equivalent to Retry::retryDelay()), can use float for microsecond precision
     ]
 )->get('https://api.example.com/data');
 ```
@@ -256,9 +308,10 @@ Increases delay exponentially with each attempt. Best for general-purpose retrie
 use GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy;
 
 $strategy = new ExponentialBackoffStrategy(
-    multiplier: 2.0,    // Delay multiplier
-    maxDelay: 60,       // Maximum delay in seconds
-    withJitter: true    // Add randomness to prevent thundering herd
+    multiplier: 2.0,      // Delay multiplier
+    maxDelay: 60,         // Maximum delay in seconds
+    withJitter: true,     // Add randomness to prevent thundering herd
+    jitterPercent: 0.2    // Percentage of jitter (0.2 means ±20%)
 );
 ```
 
@@ -274,7 +327,20 @@ $strategy = new LinearBackoffStrategy(
 );
 ```
 
-#### 3. FixedDelayStrategy
+#### 3. FibonacciBackoffStrategy
+Increases delay according to the Fibonacci sequence. Good balance between aggressive and conservative retries.
+
+```php
+use GregPriday\LaravelRetry\Strategies\FibonacciBackoffStrategy;
+
+$strategy = new FibonacciBackoffStrategy(
+    maxDelay: 60,       // Maximum delay in seconds
+    withJitter: true,   // Add randomness to prevent thundering herd
+    jitterPercent: 0.2  // Percentage of jitter (0.2 means ±20%)
+);
+```
+
+#### 4. FixedDelayStrategy
 Uses the same delay for every retry attempt.
 
 ```php
@@ -286,7 +352,7 @@ $strategy = new FixedDelayStrategy(
 );
 ```
 
-#### 4. DecorrelatedJitterStrategy
+#### 5. DecorrelatedJitterStrategy
 Implements AWS-style jitter for better distribution of retries.
 
 ```php
@@ -299,7 +365,7 @@ $strategy = new DecorrelatedJitterStrategy(
 );
 ```
 
-#### 5. GuzzleResponseStrategy
+#### 6. GuzzleResponseStrategy
 Intelligent HTTP retry strategy that respects response headers.
 
 ```php
@@ -312,7 +378,7 @@ $strategy = new GuzzleResponseStrategy(
 );
 ```
 
-#### 6. ResponseContentStrategy
+#### 7. ResponseContentStrategy
 Inspects response bodies for error conditions, even on successful status codes.
 
 ```php
@@ -327,7 +393,7 @@ $strategy = new ResponseContentStrategy(
 );
 ```
 
-#### 7. CircuitBreakerStrategy
+#### 8. CircuitBreakerStrategy
 Implements the Circuit Breaker pattern to prevent overwhelming failing services.
 
 ```php
@@ -341,7 +407,7 @@ $strategy = new CircuitBreakerStrategy(
 );
 ```
 
-#### 8. RateLimitStrategy
+#### 9. RateLimitStrategy
 Uses Laravel's Rate Limiter to control retry attempts.
 
 ```php
@@ -356,7 +422,7 @@ $strategy = new RateLimitStrategy(
 );
 ```
 
-#### 9. TotalTimeoutStrategy
+#### 10. TotalTimeoutStrategy
 Enforces a maximum total duration for the entire retry operation.
 
 ```php
@@ -369,7 +435,7 @@ $strategy = new TotalTimeoutStrategy(
 );
 ```
 
-#### 10. CustomOptionsStrategy
+#### 11. CustomOptionsStrategy
 Create custom retry behavior without extending the base classes.
 
 ```php

@@ -21,9 +21,10 @@ return [
     |
     | This value determines the base delay (in seconds) between retry attempts.
     | The actual delay will increase exponentially with each attempt.
+    | Can be a float value for microsecond precision (e.g., 0.5 for 500ms).
     |
     */
-    'delay' => env('RETRY_DELAY', 5),
+    'delay' => env('RETRY_DELAY', 1.0),
 
     /*
     |--------------------------------------------------------------------------
@@ -44,6 +45,7 @@ return [
     | This value determines the maximum time (in seconds) that the entire
     | retry operation is allowed to run, including all retry attempts.
     | When used with TotalTimeoutStrategy, this overrides the regular timeout.
+    | Can be a float value for microsecond precision (e.g., 10.5 for 10.5 seconds).
     |
     */
     'total_timeout' => env('RETRY_TOTAL_TIMEOUT', 300),

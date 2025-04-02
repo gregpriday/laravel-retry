@@ -16,7 +16,7 @@ class RetryingOperationEvent
     public function __construct(
         public int $attempt,
         public int $maxRetries,
-        public int $delay,
+        public float $delay,
         public ?Throwable $exception,
         public int $timestamp,
         public RetryContext $context,
