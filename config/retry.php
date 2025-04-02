@@ -16,18 +16,6 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Default Retry Delay
-    |--------------------------------------------------------------------------
-    |
-    | This value determines the base delay (in seconds) between retry attempts.
-    | The actual delay will increase exponentially with each attempt.
-    | Can be a float value for microsecond precision (e.g., 0.5 for 500ms).
-    |
-    */
-    'delay' => env('RETRY_DELAY', 1.0),
-
-    /*
-    |--------------------------------------------------------------------------
     | Default Operation Timeout
     |--------------------------------------------------------------------------
     |
@@ -49,6 +37,37 @@ return [
     |
     */
     'total_timeout' => env('RETRY_TOTAL_TIMEOUT', 300),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Default Strategy
+    |--------------------------------------------------------------------------
+    |
+    | This setting allows you to configure the default retry strategy used
+    | when no strategy is explicitly specified. You can specify the class and
+    | constructor parameters.
+    |
+    */
+    'default_strategy' => [
+        // The strategy class to use by default
+        'class' => env(
+            'RETRY_DEFAULT_STRATEGY',
+            \GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy::class
+        ),
+
+        // Constructor parameters for the strategy
+        // The baseDelay fallback order is:
+        // 1. baseDelay in options (if explicitly set here)
+        // 2. Legacy retry.delay config (for backwards compatibility, if it exists)
+        // 3. Strategy's own default baseDelay value
+        'options' => [
+            'multiplier'    => 2.0,
+            'maxDelay'      => null,
+            'withJitter'    => false,
+            'jitterPercent' => 0.2,
+            'baseDelay'     => 1.0,
+        ],
+    ],
 
     /*
     |--------------------------------------------------------------------------

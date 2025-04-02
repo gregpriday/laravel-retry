@@ -11,12 +11,14 @@ class RateLimitStrategy implements RetryStrategy
     /**
      * Create a new rate limit strategy.
      *
+     * @param  float  $baseDelay  Base delay in seconds (can be float)
      * @param  RetryStrategy  $innerStrategy  The wrapped retry strategy
      * @param  int  $maxAttempts  Maximum attempts per time window
      * @param  int  $timeWindow  Time window in seconds
      * @param  string  $storageKey  Unique key for this rate limiter instance
      */
     public function __construct(
+        protected float $baseDelay,
         protected RetryStrategy $innerStrategy,
         protected int $maxAttempts = 100,
         protected int $timeWindow = 60,
@@ -29,12 +31,11 @@ class RateLimitStrategy implements RetryStrategy
      * Calculate the delay for the next retry attempt.
      *
      * @param  int  $attempt  Current attempt number (0-based)
-     * @param  float  $baseDelay  Base delay in seconds (can be float)
      * @return float Delay in seconds (can have microsecond precision)
      */
-    public function getDelay(int $attempt, float $baseDelay): float
+    public function getDelay(int $attempt): float
     {
-        $innerDelay = $this->innerStrategy->getDelay($attempt, $baseDelay);
+        $innerDelay = $this->innerStrategy->getDelay($attempt);
 
         // Add additional delay if we're near the rate limit
         $currentRate = $this->getCurrentRate();

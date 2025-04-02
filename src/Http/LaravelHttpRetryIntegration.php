@@ -34,12 +34,15 @@ class LaravelHttpRetryIntegration
             ?RetryStrategy $strategy = null,
             array $options = []
         ) {
+            // Determine the base delay from options or use default
+            $baseDelay = (float) ($options['base_delay'] ?? 1.0);
+            
             // Default to GuzzleResponseStrategy if no strategy provided
-            $baseStrategy = $strategy ?? new GuzzleResponseStrategy;
+            $baseStrategy = $strategy ?? new GuzzleResponseStrategy($baseDelay);
 
             // Wrap with CustomOptionsStrategy if options provided
             if (! empty($options)) {
-                $strategy = new CustomOptionsStrategy($baseStrategy, $options);
+                $strategy = new CustomOptionsStrategy($baseDelay, $baseStrategy, $options);
             } else {
                 $strategy = $baseStrategy;
             }
@@ -65,10 +68,8 @@ class LaravelHttpRetryIntegration
             };
 
             // Calculate delay using strategy (convert attempt to 0-based index)
-            $sleepCallback = function (int $attempt, Throwable $exception) use ($strategy, $options) {
-                $baseDelay = $options['base_delay'] ?? 1;
-
-                return $strategy->getDelay($attempt - 1, $baseDelay) * 1000; // Convert to milliseconds
+            $sleepCallback = function (int $attempt, Throwable $exception) use ($strategy) {
+                return $strategy->getDelay($attempt - 1) * 1000; // Convert to milliseconds
             };
 
             // Apply retry using Laravel's built-in retry method
@@ -101,9 +102,13 @@ class LaravelHttpRetryIntegration
          * @return PendingRequest
          */
         Http::macro('withCircuitBreaker', function (int $maxAttempts = 3, int $timeout = 60, array $options = []) {
-            $strategy = app(\GregPriday\LaravelRetry\Strategies\CircuitBreakerStrategy::class, [
-                'timeout' => $timeout,
-            ]);
+            $innerStrategy = new GuzzleResponseStrategy;
+
+            $strategy = new \GregPriday\LaravelRetry\Strategies\CircuitBreakerStrategy(
+                innerStrategy: $innerStrategy,
+                failureThreshold: $options['failure_threshold'] ?? 5,
+                resetTimeout: $timeout
+            );
 
             return $this->robustRetry($maxAttempts, $strategy, $options);
         });
@@ -138,7 +143,8 @@ class LaravelHttpRetryIntegration
          * @return PendingRequest
          */
         Http::macro('retryWhen', function (Closure $condition, array $options = []) {
-            $strategy = new CustomOptionsStrategy(new GuzzleResponseStrategy);
+            $baseDelay = (float) ($options['base_delay'] ?? 1.0);
+            $strategy = new CustomOptionsStrategy($baseDelay, new GuzzleResponseStrategy($baseDelay));
             $strategy->withShouldRetryCallback($condition);
 
             return $this->robustRetry(

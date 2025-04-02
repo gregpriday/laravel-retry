@@ -14,11 +14,13 @@ class DecorrelatedJitterStrategy implements RetryStrategy
      *
      * @link https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/
      *
+     * @param  float  $baseDelay  Base delay in seconds (can be float)
      * @param  float|null  $maxDelay  Maximum delay in seconds
      * @param  float  $minFactor  Minimum multiplier for the base delay
      * @param  float  $maxFactor  Maximum multiplier for the base delay
      */
     public function __construct(
+        protected float $baseDelay = 1.0,
         protected ?float $maxDelay = null,
         protected float $minFactor = 1.0,
         protected float $maxFactor = 3.0
@@ -28,15 +30,14 @@ class DecorrelatedJitterStrategy implements RetryStrategy
      * Calculate the delay for the next retry attempt.
      *
      * @param  int  $attempt  Current attempt number (0-based)
-     * @param  float  $baseDelay  Base delay in seconds (can be float)
      * @return float Delay in seconds (can have microsecond precision)
      */
-    public function getDelay(int $attempt, float $baseDelay): float
+    public function getDelay(int $attempt): float
     {
-        $minDelay = $baseDelay * $this->minFactor;
+        $minDelay = $this->baseDelay * $this->minFactor;
         $maxDelay = min(
             $this->maxDelay ?? PHP_FLOAT_MAX,
-            $baseDelay * $this->maxFactor * (1 << $attempt)
+            $this->baseDelay * $this->maxFactor * (1 << $attempt)
         );
 
         // Generate a random delay between min and max

@@ -10,10 +10,12 @@ class LinearBackoffStrategy implements RetryStrategy
     /**
      * Create a new linear backoff strategy.
      *
+     * @param  float  $baseDelay  Base delay in seconds (can be float)
      * @param  float  $increment  The increment for each subsequent retry
      * @param  float|null  $maxDelay  Maximum delay in seconds
      */
     public function __construct(
+        protected float $baseDelay = 1.0,
         protected float $increment = 1.0,
         protected ?float $maxDelay = null
     ) {}
@@ -22,13 +24,12 @@ class LinearBackoffStrategy implements RetryStrategy
      * Calculate the delay for the next retry attempt.
      *
      * @param  int  $attempt  Current attempt number (0-based)
-     * @param  float  $baseDelay  Base delay in seconds (can be float)
      * @return float Delay in seconds (can have microsecond precision)
      */
-    public function getDelay(int $attempt, float $baseDelay): float
+    public function getDelay(int $attempt): float
     {
         // Calculate linear delay: baseDelay + (increment * attempt)
-        $delay = $baseDelay + ($this->increment * $attempt);
+        $delay = $this->baseDelay + ($this->increment * $attempt);
 
         if ($this->maxDelay !== null) {
             $delay = min($delay, $this->maxDelay);

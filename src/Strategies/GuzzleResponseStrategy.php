@@ -17,29 +17,30 @@ class GuzzleResponseStrategy implements RetryStrategy
     /**
      * Create a new Guzzle response strategy.
      *
+     * @param  float  $baseDelay  Base delay in seconds (can be float)
      * @param  RetryStrategy|null  $innerStrategy  Strategy to use when no retry headers are present
      * @param  float  $maxDelay  Maximum delay to allow from headers (in seconds)
      */
     public function __construct(
+        protected float $baseDelay = 1.0,
         protected ?RetryStrategy $innerStrategy = null,
         protected float $maxDelay = 300.0 // 5 minutes max delay
     ) {
-        $this->innerStrategy ??= new ExponentialBackoffStrategy;
+        $this->innerStrategy ??= new ExponentialBackoffStrategy($this->baseDelay);
     }
 
     /**
      * Calculate the delay for the next retry attempt.
      *
      * @param  int  $attempt  Current attempt number (0-based)
-     * @param  float  $baseDelay  Base delay in seconds (can be float)
      * @return float Delay in seconds (can have microsecond precision)
      */
-    public function getDelay(int $attempt, float $baseDelay): float
+    public function getDelay(int $attempt): float
     {
         // If no exception stored or not a RequestException, use inner strategy
         if (! $this->lastException || ! ($this->lastException instanceof RequestException)) {
             return min(
-                $this->innerStrategy->getDelay($attempt, $baseDelay),
+                $this->innerStrategy->getDelay($attempt),
                 $this->maxDelay
             );
         }
@@ -47,7 +48,7 @@ class GuzzleResponseStrategy implements RetryStrategy
         $response = $this->getResponseFromException($this->lastException);
         if (! $response) {
             return min(
-                $this->innerStrategy->getDelay($attempt, $baseDelay),
+                $this->innerStrategy->getDelay($attempt),
                 $this->maxDelay
             );
         }
@@ -59,7 +60,7 @@ class GuzzleResponseStrategy implements RetryStrategy
 
         if ($delay === null) {
             return min(
-                $this->innerStrategy->getDelay($attempt, $baseDelay),
+                $this->innerStrategy->getDelay($attempt),
                 $this->maxDelay
             );
         }

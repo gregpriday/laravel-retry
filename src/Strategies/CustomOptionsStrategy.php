@@ -22,11 +22,15 @@ class CustomOptionsStrategy implements RetryStrategy
     /**
      * Create a new custom options strategy.
      *
+     * @param  float  $baseDelay  Base delay in seconds (can be float)
      * @param  RetryStrategy  $innerStrategy  The base strategy to wrap
      * @param  array<string, mixed>  $options  Custom options for retry behavior
      */
-    public function __construct(RetryStrategy $innerStrategy, array $options = [])
-    {
+    public function __construct(
+        protected float $baseDelay,
+        RetryStrategy $innerStrategy,
+        array $options = []
+    ) {
         $this->innerStrategy = $innerStrategy;
         $this->options = $options;
     }
@@ -90,12 +94,12 @@ class CustomOptionsStrategy implements RetryStrategy
     /**
      * {@inheritdoc}
      */
-    public function getDelay(int $attempt, float $baseDelay): float
+    public function getDelay(int $attempt): float
     {
         if ($this->delayCallback !== null) {
-            return ($this->delayCallback)($attempt, $baseDelay, $this->options);
+            return ($this->delayCallback)($attempt, $this->baseDelay, $this->options);
         }
 
-        return $this->innerStrategy->getDelay($attempt, $baseDelay);
+        return $this->innerStrategy->getDelay($attempt);
     }
 }

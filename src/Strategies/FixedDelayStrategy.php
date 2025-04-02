@@ -10,10 +10,12 @@ class FixedDelayStrategy implements RetryStrategy
     /**
      * Create a new fixed delay strategy.
      *
+     * @param  float  $baseDelay  Base delay in seconds (can be float)
      * @param  bool  $withJitter  Whether to add random jitter to delays
      * @param  float  $jitterPercent  The percentage of jitter to apply (0.2 means ±20%)
      */
     public function __construct(
+        protected float $baseDelay = 1.0,
         protected bool $withJitter = false,
         protected float $jitterPercent = 0.2
     ) {}
@@ -22,16 +24,15 @@ class FixedDelayStrategy implements RetryStrategy
      * Calculate the delay for the next retry attempt.
      *
      * @param  int  $attempt  Current attempt number (0-based)
-     * @param  float  $baseDelay  Base delay in seconds (can be float)
      * @return float Delay in seconds (can have microsecond precision)
      */
-    public function getDelay(int $attempt, float $baseDelay): float
+    public function getDelay(int $attempt): float
     {
         if (! $this->withJitter) {
-            return $baseDelay;
+            return $this->baseDelay;
         }
 
-        return $this->addJitter($baseDelay);
+        return $this->addJitter($this->baseDelay);
     }
 
     /**

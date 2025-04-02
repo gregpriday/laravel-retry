@@ -16,15 +16,12 @@ use RuntimeException;
  *
  * This class extends Laravel's Pipeline and allows for configurable retry behavior
  * at both the pipeline level and per-pipe level. Pipes can override retry settings
- * by defining public properties such as retryCount, retryDelay, or retryStrategy.
+ * by defining public properties such as retryCount, retryStrategy, or timeout.
  */
 class RetryablePipeline extends BasePipeline
 {
     /** @var int Maximum number of retries for each pipe */
     protected int $maxRetries;
-
-    /** @var int Delay between retries in seconds */
-    protected int $retryDelay;
 
     /** @var int Operation timeout in seconds */
     protected int $timeout;
@@ -52,7 +49,6 @@ class RetryablePipeline extends BasePipeline
         parent::__construct($container);
 
         $this->maxRetries = 3;
-        $this->retryDelay = 1;
         $this->timeout = 30;
     }
 
@@ -65,19 +61,6 @@ class RetryablePipeline extends BasePipeline
     public function maxRetries(int $retries): self
     {
         $this->maxRetries = $retries;
-
-        return $this;
-    }
-
-    /**
-     * Set the delay between retries.
-     *
-     * @param  int  $seconds  Delay in seconds
-     * @return $this
-     */
-    public function retryDelay(int $seconds): self
-    {
-        $this->retryDelay = $seconds;
 
         return $this;
     }
@@ -184,7 +167,6 @@ class RetryablePipeline extends BasePipeline
 
                     // Determine pipe-specific overrides
                     $localMaxRetries = $this->maxRetries;
-                    $localRetryDelay = $this->retryDelay;
                     $localStrategy = $this->strategy;
                     $localTimeout = $this->timeout;
                     $localPatterns = $this->additionalPatterns;
@@ -194,10 +176,6 @@ class RetryablePipeline extends BasePipeline
                     if (is_object($pipe)) {
                         if (property_exists($pipe, 'retryCount')) {
                             $localMaxRetries = $pipe->retryCount;
-                        }
-
-                        if (property_exists($pipe, 'retryDelay')) {
-                            $localRetryDelay = $pipe->retryDelay;
                         }
 
                         if (property_exists($pipe, 'retryStrategy')) {
@@ -220,7 +198,6 @@ class RetryablePipeline extends BasePipeline
                     // Create a new Retry instance with the appropriate settings
                     $retry = new Retry(
                         maxRetries: $localMaxRetries,
-                        retryDelay: $localRetryDelay,
                         timeout: $localTimeout,
                         progressCallback: $this->progressCallback,
                         strategy: $localStrategy,

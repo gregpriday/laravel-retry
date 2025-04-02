@@ -22,11 +22,13 @@ class CircuitBreakerStrategy implements RetryStrategy
     /**
      * Create a new circuit breaker strategy.
      *
+     * @param  float  $baseDelay  Base delay in seconds (can be float)
      * @param  RetryStrategy  $innerStrategy  The wrapped retry strategy
      * @param  int  $failureThreshold  Number of failures before opening circuit
      * @param  float  $resetTimeout  Seconds before attempting reset (half-open)
      */
     public function __construct(
+        protected float $baseDelay,
         protected RetryStrategy $innerStrategy,
         protected int $failureThreshold = 5,
         protected float $resetTimeout = 60.0
@@ -36,14 +38,13 @@ class CircuitBreakerStrategy implements RetryStrategy
      * Calculate the delay for the next retry attempt.
      *
      * @param  int  $attempt  Current attempt number (0-based)
-     * @param  float  $baseDelay  Base delay in seconds (can be float)
      * @return float Delay in seconds (can have microsecond precision)
      */
-    public function getDelay(int $attempt, float $baseDelay): float
+    public function getDelay(int $attempt): float
     {
         // Delay calculation doesn't depend on circuit state directly,
         // but relies on the inner strategy.
-        return $this->innerStrategy->getDelay($attempt, $baseDelay);
+        return $this->innerStrategy->getDelay($attempt);
     }
 
     /**

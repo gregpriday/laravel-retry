@@ -21,11 +21,6 @@ class Retry
     private const int DEFAULT_MAX_RETRIES = 3;
 
     /**
-     * Default delay between retries in seconds.
-     */
-    private const int DEFAULT_RETRY_DELAY = 5;
-
-    /**
      * Default timeout for operations in seconds.
      */
     private const int DEFAULT_TIMEOUT = 30;
@@ -84,14 +79,12 @@ class Retry
      */
     public function __construct(
         protected ?int $maxRetries = null,
-        protected ?float $retryDelay = null,
         protected ?int $timeout = null,
         protected ?Closure $progressCallback = null,
         protected ?RetryStrategy $strategy = null,
         protected ?ExceptionHandlerManager $exceptionManager = null
     ) {
         $this->maxRetries = $maxRetries ?? config('retry.max_retries', self::DEFAULT_MAX_RETRIES);
-        $this->retryDelay = $retryDelay ?? config('retry.delay', self::DEFAULT_RETRY_DELAY);
         $this->timeout = $timeout ?? config('retry.timeout', self::DEFAULT_TIMEOUT);
         $this->exceptionManager = $exceptionManager ?? new ExceptionHandlerManager;
         $this->strategy = $strategy ?? new ExponentialBackoffStrategy;
@@ -110,14 +103,12 @@ class Retry
      */
     public static function make(
         ?int $maxRetries = null,
-        ?float $retryDelay = null,
         ?int $timeout = null,
         ?RetryStrategy $strategy = null,
         ?ExceptionHandlerManager $exceptionManager = null,
     ): self {
         return new static(
             maxRetries: $maxRetries,
-            retryDelay: $retryDelay,
             timeout: $timeout,
             strategy: $strategy,
             exceptionManager: $exceptionManager,
@@ -233,7 +224,7 @@ class Retry
                     attempt: $attempt,
                     exception: $e,
                     wasRetryable: $isRetryable,
-                    delay: $isRetryable ? $this->strategy->getDelay($attempt, $this->retryDelay) : null,
+                    delay: $isRetryable ? $this->strategy->getDelay($attempt) : null,
                     duration: $duration
                 );
 
@@ -242,7 +233,7 @@ class Retry
                     // Dispatch retry event before handling the error
                     $this->dispatchRetryingOperationEvent(
                         attempt: $attempt + 1,
-                        delay: $this->strategy->getDelay($attempt, $this->retryDelay),
+                        delay: $this->strategy->getDelay($attempt),
                         exception: $e
                     );
 
@@ -343,7 +334,7 @@ class Retry
             return;
         }
 
-        $delay = $this->strategy->getDelay($attempt, $this->retryDelay);
+        $delay = $this->strategy->getDelay($attempt);
         $message = sprintf(
             'Exception caught: Attempt %d failed: %s. Retrying in %.3f seconds... (%d attempts remaining)',
             $attempt + 1,
@@ -419,16 +410,6 @@ class Retry
     }
 
     /**
-     * Set the retry delay.
-     */
-    public function retryDelay(float $seconds): self
-    {
-        $this->retryDelay = $seconds;
-
-        return $this;
-    }
-
-    /**
      * Set the timeout.
      */
     public function timeout(int $seconds): self
@@ -452,14 +433,6 @@ class Retry
     public function getMaxRetries(): int
     {
         return $this->maxRetries;
-    }
-
-    /**
-     * Get the current retry delay.
-     */
-    public function getRetryDelay(): float
-    {
-        return $this->retryDelay;
     }
 
     /**

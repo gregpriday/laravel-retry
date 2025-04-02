@@ -20,6 +20,7 @@ class ResponseContentStrategy implements RetryStrategy
     /**
      * Create a new response content strategy.
      *
+     * @param  float  $baseDelay  Base delay in seconds (can be float)
      * @param  RetryStrategy  $innerStrategy  The wrapped retry strategy
      * @param  array  $retryableContentPatterns  Array of regex patterns to match in response body
      * @param  array  $retryableErrorCodes  Array of error codes in JSON responses that indicate retryable errors
@@ -27,6 +28,7 @@ class ResponseContentStrategy implements RetryStrategy
      * @param  Closure|null  $retryableContentChecker  Custom function to determine if response content is retryable
      */
     public function __construct(
+        protected float $baseDelay,
         protected RetryStrategy $innerStrategy,
         protected array $retryableContentPatterns = [],
         protected array $retryableErrorCodes = [],
@@ -38,12 +40,11 @@ class ResponseContentStrategy implements RetryStrategy
      * Calculate the delay for the next retry attempt.
      *
      * @param  int  $attempt  Current attempt number (0-based)
-     * @param  float  $baseDelay  Base delay in seconds (can be float)
      * @return float Delay in seconds (can have microsecond precision)
      */
-    public function getDelay(int $attempt, float $baseDelay): float
+    public function getDelay(int $attempt): float
     {
-        return $this->innerStrategy->getDelay($attempt, $baseDelay);
+        return $this->innerStrategy->getDelay($attempt);
     }
 
     /**
