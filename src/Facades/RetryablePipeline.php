@@ -9,11 +9,12 @@ use Illuminate\Support\Facades\Facade;
  * @method static \GregPriday\LaravelRetry\Pipeline\RetryablePipeline through(array|mixed $pipes)
  * @method static \GregPriday\LaravelRetry\Pipeline\RetryablePipeline via(string $method)
  * @method static \GregPriday\LaravelRetry\Pipeline\RetryablePipeline maxRetries(int $retries)
- * @method static \GregPriday\LaravelRetry\Pipeline\RetryablePipeline retryDelay(int $seconds)
  * @method static \GregPriday\LaravelRetry\Pipeline\RetryablePipeline timeout(int $seconds)
  * @method static \GregPriday\LaravelRetry\Pipeline\RetryablePipeline withStrategy(\GregPriday\LaravelRetry\Contracts\RetryStrategy $strategy)
  * @method static \GregPriday\LaravelRetry\Pipeline\RetryablePipeline withProgress(\Closure $callback)
  * @method static \GregPriday\LaravelRetry\Pipeline\RetryablePipeline withExceptionManager(\GregPriday\LaravelRetry\Exceptions\ExceptionHandlerManager $manager)
+ * @method static \GregPriday\LaravelRetry\Pipeline\RetryablePipeline withAdditionalPatterns(array $patterns)
+ * @method static \GregPriday\LaravelRetry\Pipeline\RetryablePipeline withAdditionalExceptions(array $exceptions)
  * @method static mixed then(\Closure $destination)
  *
  * @see \GregPriday\LaravelRetry\Pipeline\RetryablePipeline
@@ -25,6 +26,6 @@ class RetryablePipeline extends Facade
      */
     protected static function getFacadeAccessor(): string
     {
-        return GregPriday\LaravelRetry\Pipeline\RetryablePipeline::class;
+        return \GregPriday\LaravelRetry\Pipeline\RetryablePipeline::class;
     }
 }
