@@ -15,7 +15,7 @@ In modern web applications, dealing with external services, APIs, and databases 
 
 What sets Laravel Retry apart:
 
-- **Comprehensive Retry Strategies**: Beyond basic exponential backoff, offering sophisticated strategies like Circuit Breaker, Rate Limiting, AWS-style Decorrelated Jitter, and more.
+- **Comprehensive Retry Strategies**: Beyond basic exponential backoff, offering sophisticated strategies like Circuit Breaker, Rate Limiting, AWS-style Decorrelated Jitter, Fibonacci, Response Content inspection, Total Timeout enforcement, and more.
 - **Deep Laravel Integration**: Extends Laravel's HTTP Client with retry-focused macros (like `robustRetry`, `withCircuitBreaker`) and enhances Pipelines to support per-stage retry configuration, all while leveraging Laravel's configuration and event systems.
 - **Smart Exception Handling**: Automatically detects and handles retryable exceptions with a flexible, extensible system.
 - **Rich Observability**: Detailed context tracking and event system for monitoring and debugging retry sequences.
@@ -24,6 +24,7 @@ What sets Laravel Retry apart:
 ### Key Features
 
 - Multiple built-in retry strategies for different scenarios
+- Simple strategy alias system for easier configuration (e.g., 'exponential-backoff', 'circuit-breaker')
 - Seamless integration with Laravel's HTTP Client through dedicated macros
 - Per-pipe retry configuration in Laravel pipelines
 - Automatic exception handler discovery
@@ -131,7 +132,10 @@ Available built-in strategy aliases:
   * `guzzle-response`: Intelligently handles HTTP retries based on response headers
   * `response-content`: Inspects HTTP response bodies for error conditions
   * `custom-options`: Allows for flexible, customized retry behavior
+  * `callback-retry`: Enables completely custom retry logic via callbacks
 
+* **`strategies`**: Defines the default constructor options for each strategy when invoked via its alias (used when a strategy is specified as the `default` or as an inner strategy).
+  * Dedicated sections for `circuit_breaker` and `response_content` provide more detailed configuration options for those specific strategies.
 * **`dispatch_events`** (Env: `RETRY_DISPATCH_EVENTS`): Enables/disables Laravel events during the retry lifecycle for monitoring (Default: `true`).
 * **`handler_paths`**: Directories containing custom `RetryableExceptionHandler` classes for automatic discovery.
 
@@ -161,7 +165,12 @@ $data = Retry::run(function () {
 })->value();
 
 // With HTTP Client macro (even simpler)
-$response = Http::robustRetry(3)->get('https://api.example.com/data');
+$response = Http::robustRetry(3)  // Max 3 attempts total (1 initial + 2 retries)
+    ->get('https://api.example.com/resource');
+
+// If no strategy is explicitly provided, robustRetry uses GuzzleResponseStrategy as the base.
+// When options are provided without a strategy, the GuzzleResponseStrategy is wrapped with
+// CustomOptionsStrategy to apply those settings.
 ```
 
 That's it! Laravel Retry will automatically handle common HTTP exceptions and retry with exponential backoff.
@@ -303,49 +312,49 @@ Laravel Retry provides several configuration options through fluent methods that
 
 #### Understanding Delay Configuration
 
-The delay between retry attempts is controlled by the retry strategy used. The most important parameter across all strategies is `baseDelay`, which serves as the foundation for delay calculations:
+The delay between retry attempts is primarily controlled by the retry strategy used. The most important parameter across many strategies is `baseDelay`, which serves as the foundation for delay calculations:
 
 - **What is `baseDelay`?** A floating-point value (in seconds) that defines the starting point for calculating delays between retry attempts.
-- **Default value:** `1.0` second, configured globally in `config/retry.php` under `default_strategy.options.baseDelay`.
+- **Default values:** Default values for `baseDelay` (and other strategy options) are configured **per strategy alias** in `config/retry.php` within the `strategies` array. For example, the default `baseDelay` for `exponential-backoff` might be `0.1`, while for `fixed-delay` it might be `1.0`. These defaults are used when a strategy is invoked via its alias (e.g., when set as the `default` strategy in the config, or used as an `inner_strategy` for wrappers like Circuit Breaker).
 
 How `baseDelay` is interpreted depends on the strategy:
 
-- For `ExponentialBackoffStrategy` (default), it's the starting value that gets multiplied exponentially with each attempt (e.g., with multiplier 2.0: 1s, 2s, 4s, 8s...)
+- For `ExponentialBackoffStrategy`, it's the starting value that gets multiplied exponentially with each attempt (e.g., with multiplier 2.0: 0.1s, 0.2s, 0.4s, 0.8s...)
 - For `FixedDelayStrategy`, it's the consistent delay used between each retry (e.g., always waits `baseDelay` seconds)
-- For `LinearBackoffStrategy`, it's the starting point before increments are added (e.g., with increment 1.5: 1s, 2.5s, 4s...)
-- For wrapper strategies (like `CircuitBreakerStrategy`), it's passed to the inner strategy
+- For `LinearBackoffStrategy`, it's the starting point before increments are added (e.g., with increment 0.5: 0.5s, 1.0s, 1.5s...)
+- For wrapper strategies (like `CircuitBreakerStrategy`, `RateLimitStrategy`), the `baseDelay` concept usually applies to their *inner* strategy. The configuration for these wrappers often involves specifying the alias of the inner strategy (see `config/retry.php` examples).
 
-You can configure `baseDelay` in several ways:
+You can configure `baseDelay` (and other strategy options) in several ways, listed by precedence (later options override earlier ones):
 
-1. Globally in `config/retry.php` under the `default_strategy.options.baseDelay` key
-2. When instantiating a specific strategy via its constructor parameter 
-3. In HTTP client macros via the `base_delay` option in the options array
-4. In pipeline stages via custom strategy instances
+1. **Globally per Strategy Alias:** Define the default constructor parameters, including `baseDelay`, for each strategy alias in `config/retry.php` under the `strategies` key (e.g., `config('retry.strategies.exponential-backoff.baseDelay')`).
+2. **When Instantiating a Strategy Directly:** Pass `baseDelay` as a named argument to the strategy's constructor (e.g., `new ExponentialBackoffStrategy(baseDelay: 0.5)`).
+3. **In HTTP Client Macros:** Use the `base_delay` option within the options array passed to macros like `robustRetry` or `withRetryStrategy` (e.g., `Http::robustRetry(3, null, ['base_delay' => 0.75])`).
+4. **In Pipeline Stages:** Provide a custom `RetryStrategy` instance within a pipeline stage class, configured with its specific `baseDelay` in its constructor.
 
-Example with different strategies:
+Example with different strategies (direct instantiation):
 
 ```php
 use GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy;
 use GregPriday\LaravelRetry\Strategies\FixedDelayStrategy;
 use GregPriday\LaravelRetry\Strategies\LinearBackoffStrategy;
 
-// With ExponentialBackoffStrategy
+// With ExponentialBackoffStrategy - Overrides config default for this instance
 // Base delay: 1.5s, then ~3s, then ~6s with jitter
 Retry::withStrategy(new ExponentialBackoffStrategy(baseDelay: 1.5))
     ->run($operation);
 
-// With FixedDelayStrategy
+// With FixedDelayStrategy - Overrides config default for this instance
 // Every retry will wait 0.5s (plus jitter if enabled)
 Retry::withStrategy(new FixedDelayStrategy(baseDelay: 0.5))
     ->run($operation);
 
-// With LinearBackoffStrategy (increment: 1.5)
+// With LinearBackoffStrategy (increment: 1.5) - Overrides config default for this instance
 // First retry after 1s, then 2.5s, then 4s
 Retry::withStrategy(new LinearBackoffStrategy(baseDelay: 1.0, increment: 1.5))
     ->run($operation);
 ```
 
-Most strategies in the library also support additional configuration parameters like `maxDelay`, `withJitter`, etc., that can be passed during initialization to further customize the delay behavior.
+Most strategies in the library also support additional configuration parameters like `maxDelay`, `multiplier`, `increment`, `withJitter`, etc., that can be configured similarly (in `config/retry.php` under the specific strategy alias or via constructor parameters) to further customize the delay behavior. Refer to the `config/retry.php` file and the individual strategy classes for available options.
 
 ### HTTP Client Integration
 
@@ -402,16 +411,18 @@ Use the Circuit Breaker pattern to prevent overwhelming failing services:
 use Illuminate\Support\Facades\Http;
 
 // Apply circuit breaker with default parameters
+// Uses GuzzleResponseStrategy as the default inner strategy
 $response = Http::withCircuitBreaker()
     ->get('https://api.example.com/endpoint');
 
 // Apply circuit breaker with custom parameters
+// The base_delay configures the underlying inner strategy (GuzzleResponseStrategy)
 $response = Http::withCircuitBreaker(
     failureThreshold: 5,    // Open after 5 failures
     resetTimeout: 60,       // Try again after 60 seconds
     [
         'max_attempts' => 3,
-        'base_delay' => 1.0,
+        'base_delay' => 1.0, // Configures the baseDelay of the inner strategy
         'timeout' => 5,
     ]
 )->post('https://api.example.com/data', ['key' => 'value']);
@@ -549,8 +560,8 @@ Laravel Retry comes with a comprehensive set of retry strategies to handle diffe
 | **CircuitBreakerStrategy** | `circuit-breaker` | Prevents overwhelming a failing service by temporarily halting requests after repeated failures (Circuit Breaker pattern). |
 | **RateLimitStrategy** | `rate-limit` | Controls retry frequency to respect API rate limits or manage load on internal services using Laravel's Rate Limiter. |
 | **TotalTimeoutStrategy** | `total-timeout` | Ensures the entire retry operation (including delays) completes within a specific total time limit. |
-| **CustomOptionsStrategy** | `custom-options` | Allows customizing an existing strategy's behavior with specific options and callbacks for one-off adjustments. |
-| **CallbackRetryStrategy** | `callback-retry` | Enables completely custom retry logic by defining both the delay calculation and the retry decision via callbacks. |
+| **CustomOptionsStrategy** | `custom-options` | Allows customizing an existing strategy's behavior with specific options and callbacks for one-off adjustments without extending base classes. Perfect for specific, fine-grained control over retry logic using closures. |
+| **CallbackRetryStrategy** | `callback-retry` | Enables completely custom retry logic by defining both the delay calculation and the retry decision logic via callbacks. |
 
 ```php
 use GregPriday\LaravelRetry\Facades\Retry;
@@ -580,7 +591,7 @@ $strategy = new ExponentialBackoffStrategy(
 );
 
 // Using the factory with options
-$strategy = app('retry.strategy.factory')->create('exponential-backoff', [
+$strategy = \GregPriday\LaravelRetry\Factories\StrategyFactory::make('exponential-backoff', [
     'baseDelay' => 1.0,
     'multiplier' => 2.0,
     'maxDelay' => 60,
@@ -603,7 +614,7 @@ $strategy = new LinearBackoffStrategy(
 );
 
 // Using the factory with options
-$strategy = app('retry.strategy.factory')->create('linear-backoff', [
+$strategy = \GregPriday\LaravelRetry\Factories\StrategyFactory::make('linear-backoff', [
     'baseDelay' => 1.0,
     'increment' => 5,
     'maxDelay' => 30
@@ -625,7 +636,7 @@ $strategy = new FibonacciBackoffStrategy(
 );
 
 // Using the factory with options
-$strategy = app('retry.strategy.factory')->create('fibonacci-backoff', [
+$strategy = \GregPriday\LaravelRetry\Factories\StrategyFactory::make('fibonacci-backoff', [
     'baseDelay' => 1.0,
     'maxDelay' => 60,
     'withJitter' => true,
@@ -633,10 +644,11 @@ $strategy = app('retry.strategy.factory')->create('fibonacci-backoff', [
 ]);
 ```
 
-#### 4. FixedDelayStrategy
+#### 4. FixedDelayStrategy (Alias: `fixed-delay`)
 Uses the same delay for every retry attempt. Ideal when the expected recovery time is consistent or when predictable delays are needed.
 
 ```php
+// Using the class directly
 use GregPriday\LaravelRetry\Strategies\FixedDelayStrategy;
 
 $strategy = new FixedDelayStrategy(
@@ -644,12 +656,20 @@ $strategy = new FixedDelayStrategy(
     withJitter: true,     // Add randomness
     jitterPercent: 0.2    // ±20% jitter
 );
+
+// Using the factory with options
+$strategy = \GregPriday\LaravelRetry\Factories\StrategyFactory::make('fixed-delay', [
+    'baseDelay' => 1.0,
+    'withJitter' => true,
+    'jitterPercent' => 0.2
+]);
 ```
 
-#### 5. DecorrelatedJitterStrategy
+#### 5. DecorrelatedJitterStrategy (Alias: `decorrelated-jitter`)
 Implements AWS-style jitter for better distribution of retries. Excellent for high-traffic scenarios to prevent the "thundering herd" problem where many clients retry simultaneously.
 
 ```php
+// Using the class directly
 use GregPriday\LaravelRetry\Strategies\DecorrelatedJitterStrategy;
 
 $strategy = new DecorrelatedJitterStrategy(
@@ -658,126 +678,213 @@ $strategy = new DecorrelatedJitterStrategy(
     minFactor: 1.0,     // Minimum delay multiplier
     maxFactor: 3.0      // Maximum delay multiplier
 );
+
+// Using the factory with options
+$strategy = \GregPriday\LaravelRetry\Factories\StrategyFactory::make('decorrelated-jitter', [
+    'baseDelay' => 1.0,
+    'maxDelay' => 60,
+    'minFactor' => 1.0,
+    'maxFactor' => 3.0
+]);
 ```
 
-#### 6. GuzzleResponseStrategy
+#### 6. GuzzleResponseStrategy (Alias: `guzzle-response`)
 Intelligent HTTP retry strategy that respects response headers. Perfect for APIs that provide retry guidance through headers like `Retry-After` or `X-RateLimit-Reset`.
 
 ```php
+// Using the class directly
 use GregPriday\LaravelRetry\Strategies\GuzzleResponseStrategy;
 use GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy;
 
 $strategy = new GuzzleResponseStrategy(
     baseDelay: 1.0,                                   // Base delay in seconds (default: 1.0)
-    fallbackStrategy: new ExponentialBackoffStrategy(baseDelay: 0.5),  // Optional custom inner strategy
+    innerStrategy: new ExponentialBackoffStrategy(baseDelay: 0.5),  // Optional custom inner strategy
     maxDelay: 60
 );
+
+// Using the factory with options
+// Inner strategy defaults to application default if not specified
+$strategy = \GregPriday\LaravelRetry\Factories\StrategyFactory::make('guzzle-response', [
+    'baseDelay' => 1.0, // Configures the default inner strategy's base delay
+    'maxDelay' => 60
+    // 'innerStrategy' => new CustomInnerStrategy() // Can also provide an instance
+]);
 ```
 
-#### 7. ResponseContentStrategy
+#### 7. ResponseContentStrategy (Alias: `response-content`)
 Inspects response bodies for error conditions, even on successful status codes. Use for APIs that return success HTTP codes (200 OK) but signal errors via JSON response body.
 
 ```php
+// Using the class directly
 use GregPriday\LaravelRetry\Strategies\ResponseContentStrategy;
 use GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy;
 
 $strategy = new ResponseContentStrategy(
-    baseDelay: 1.0,                                      // Base delay in seconds (default: 1.0)
-    innerStrategy: new ExponentialBackoffStrategy(baseDelay: 0.5),  // Optional custom inner strategy
-    retryableContentPatterns: ['/server busy/i'],
+    innerStrategy: new ExponentialBackoffStrategy(baseDelay: 0.5),  // Inner strategy controls delay
+    retryableContentPatterns: ['/server busy/i', '/try again/i'], // Regex patterns in body
     retryableErrorCodes: ['TRY_AGAIN'],
     errorCodePaths: ['error.status_code']
 );
+
+// Using the factory with options
+// Options are typically loaded from config('retry.response_content')
+// Inner strategy defaults to the application's default retry strategy
+$strategy = \GregPriday\LaravelRetry\Factories\StrategyFactory::make('response-content');
+
+// Or provide specific options (less common, usually configured globally)
+$strategy = \GregPriday\LaravelRetry\Factories\StrategyFactory::make('response-content', [
+    'retryableContentPatterns' => ['/custom pattern/'],
+    'retryableErrorCodes' => ['MY_CODE'],
+    'errorCodePaths' => ['data.error_status'],
+    // 'innerStrategy' can also be provided here if needed
+]);
 ```
 
-#### 8. CircuitBreakerStrategy
+#### 8. CircuitBreakerStrategy (Alias: `circuit-breaker`)
 Implements the Circuit Breaker pattern to prevent overwhelming failing services. After a threshold of failures, it "opens" and temporarily stops attempts, allowing the service to recover.
 
 ```php
+// Using the class directly
 use GregPriday\LaravelRetry\Strategies\CircuitBreakerStrategy;
 use GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy;
 
 $strategy = new CircuitBreakerStrategy(
-    baseDelay: 1.0,                                         // Passed to inner strategy (default: 1.0)
-    innerStrategy: new ExponentialBackoffStrategy(baseDelay: 2.0),  // Inner strategy with custom baseDelay
+    innerStrategy: new ExponentialBackoffStrategy(baseDelay: 2.0),  // Inner strategy controls delay
     failureThreshold: 3,    // Open after 3 failures
-    resetTimeout: 120       // Stay open for 2 minutes
+    resetTimeout: 120,      // Stay open for 2 minutes
+    cacheKey: 'my_service_circuit', // Optional unique key for this circuit
+    cacheTtl: 1440, // Cache TTL in minutes (default: 1 day)
+    failOpenOnCacheError: false // Default behavior on cache errors
 );
+
+// Using the factory with options
+// Creates a circuit breaker using default or named service settings from config
+$strategy = \GregPriday\LaravelRetry\Factories\StrategyFactory::make('circuit-breaker');
+
+// Or with specific options
+$strategy = \GregPriday\LaravelRetry\Factories\StrategyFactory::make('circuit-breaker', [
+    'failureThreshold' => 5,
+    'resetTimeout' => 60,
+    // Inner strategy defaults to application default if not specified
+]);
 ```
 
-#### 9. RateLimitStrategy
+#### 9. RateLimitStrategy (Alias: `rate-limit`)
 Uses Laravel's Rate Limiter to control retry attempts. Ideal for respecting API rate limits or managing load on internal services.
 
 ```php
+// Using the class directly
 use GregPriday\LaravelRetry\Strategies\RateLimitStrategy;
 use GregPriday\LaravelRetry\Strategies\FixedDelayStrategy;
 
 $strategy = new RateLimitStrategy(
-    baseDelay: 1.0,                                    // Base delay in seconds (default: 1.0)
-    innerStrategy: new FixedDelayStrategy(baseDelay: 0.5),  // Inner strategy with custom baseDelay
-    maxAttempts: 50,
-    timeWindow: 60,                  // 50 attempts per minute
-    storageKey: 'api-rate-limiter'
+    innerStrategy: new FixedDelayStrategy(baseDelay: 0.5),  // Inner strategy controls delay
+    maxAttempts: 50,    // Max attempts allowed
+    timeWindow: 60,     // Within this time window (seconds)
+    storageKey: 'api-rate-limiter'  // Unique key for the rate limiter
 );
+
+// Using the factory with options
+// Inner strategy defaults to application default if not specified
+$strategy = \GregPriday\LaravelRetry\Factories\StrategyFactory::make('rate-limit', [
+    'maxAttempts' => 100,
+    'timeWindow' => 60,
+    'storageKey' => 'my_api_limit'
+    // 'innerStrategy' => new CustomInnerStrategy() // Can also provide an instance
+]);
 ```
 
-#### 10. TotalTimeoutStrategy
+#### 10. TotalTimeoutStrategy (Alias: `total-timeout`)
 Enforces a maximum total duration for the entire retry operation. Use when an operation must complete within a strict time budget, regardless of individual attempt results.
 
 ```php
+// Using the class directly
 use GregPriday\LaravelRetry\Strategies\TotalTimeoutStrategy;
 use GregPriday\LaravelRetry\Strategies\LinearBackoffStrategy;
 
 $strategy = new TotalTimeoutStrategy(
-    baseDelay: 1.0,                                      // Base delay in seconds (default: 1.0)
-    innerStrategy: new LinearBackoffStrategy(baseDelay: 0.5),  // Inner strategy with custom baseDelay
-    totalTimeout: 30    // Complete within 30 seconds
+    innerStrategy: new LinearBackoffStrategy(baseDelay: 0.5),  // Inner strategy controls delay
+    totalTimeout: 30.0    // Complete within 30 seconds (float for precision)
 );
+
+// Using the factory with options
+// totalTimeout loaded from config('retry.total_timeout')
+// Inner strategy defaults to the application's default retry strategy
+$strategy = \GregPriday\LaravelRetry\Factories\StrategyFactory::make('total-timeout');
+
+// Or with specific options
+$strategy = \GregPriday\LaravelRetry\Factories\StrategyFactory::make('total-timeout', [
+    'totalTimeout' => 45.5, // Override total timeout
+    // 'innerStrategy' => new CustomInnerStrategy() // Can also provide an instance
+]);
 ```
 
-#### 11. CustomOptionsStrategy
-Create custom retry behavior without extending the base classes. Perfect for specific, one-off adjustments to retry logic via callbacks.
+#### 11. CustomOptionsStrategy (Alias: `custom-options`)
+Allows customizing an existing strategy's behavior with specific options and callbacks for one-off adjustments without extending base classes. Perfect for specific, fine-grained control over retry logic using closures.
 
 ```php
+// Using the class directly
 use GregPriday\LaravelRetry\Strategies\CustomOptionsStrategy;
 use GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy;
 
 $strategy = new CustomOptionsStrategy(
-    baseDelay: 1.0,                                         // Base delay in seconds (default: 1.0)
-    innerStrategy: new ExponentialBackoffStrategy(baseDelay: 0.5),  // Inner strategy with custom baseDelay
-    options: ['custom_flag' => true]
+    baseDelay: 1.0, // Base delay reference for callbacks
+    innerStrategy: new ExponentialBackoffStrategy(baseDelay: 0.5), // Base strategy to potentially fall back to
+    options: ['custom_flag' => true, 'user_id' => 123] // Custom data for callbacks
 );
 
+// Override the retry decision logic
 $strategy->withShouldRetryCallback(function ($attempt, $maxAttempts, $exception, $options) {
+    // Only retry if custom_flag is true and within attempts
     return $options['custom_flag'] && $attempt < $maxAttempts;
 });
 
+// Override the delay calculation logic
 $strategy->withDelayCallback(function ($attempt, $baseDelay, $options) {
+    // Use baseDelay, but maybe double it if custom_flag is set
     return $baseDelay * ($options['custom_flag'] ? 2 : 1);
 });
+
+// Using the factory with options (callbacks set after instantiation)
+$strategy = \GregPriday\LaravelRetry\Factories\StrategyFactory::make('custom-options', [
+    'baseDelay' => 2.0,
+    'options' => ['initial_option' => 'value']
+    // Inner strategy defaults to application default
+]);
+// $strategy->withShouldRetryCallback(...)
+// $strategy->withDelayCallback(...)
+
+// Note: Direct instantiation is generally preferred for this strategy
+// since callbacks are fundamental to its functionality
 ```
 
-#### 12. CallbackRetryStrategy
-A fully callback-driven strategy where you define both the delay and retry decision logic. Ideal for completely custom retry patterns without a base strategy.
+#### 12. CallbackRetryStrategy (Alias: `callback-retry`)
+A fully callback-driven strategy where you define *both* the delay calculation and the retry decision logic via closures. Ideal for completely custom retry patterns without needing a base strategy.
 
 ```php
+// Using the class directly
 use GregPriday\LaravelRetry\Strategies\CallbackRetryStrategy;
+use App\Exceptions\CustomTransientException; // Example custom exception
 
 $strategy = new CallbackRetryStrategy(
-    delayCallback: fn($attempt, $baseDelay) => $baseDelay * ($attempt + 1), // 1s, 2s, 3s
-    shouldRetryCallback: fn($attempt, $maxAttempts, $exception) => $exception instanceof \TimeoutException,
-    baseDelay: 1.0,
-    options: ['log_retries' => true]
+    // Define how delay is calculated (receives attempt, baseDelay, maxAttempts, exception, options)
+    delayCallback: fn($attempt, $baseDelay) => $baseDelay * ($attempt + 1), // e.g., 1s, 2s, 3s...
+
+    // Define when to retry (optional, defaults to checking attempts)
+    // Receives (attempt, maxAttempts, exception, options)
+    shouldRetryCallback: fn($attempt, $maxAttempts, $exception) =>
+        $attempt < $maxAttempts && $exception instanceof CustomTransientException,
+
+    baseDelay: 1.0, // Reference delay value for delayCallback (default: 1.0)
+    options: ['log_retries' => true] // Custom data passed to callbacks (default: [])
 );
 
+// Usage:
 Retry::withStrategy($strategy)->maxRetries(3)->run(fn() => /* operation */);
-```
 
-- **Parameters**:
-  - `delayCallback`: Returns the delay in seconds based on attempt, base delay, max attempts, exception, and options.
-  - `shouldRetryCallback` (optional): Decides if a retry should occur; defaults to retrying if attempts remain.
-  - `baseDelay`: Reference delay value (default: 1.0).
-  - `options`: Custom data passed to callbacks.
+// Note: Creating via factory alias is less common as callbacks must be provided in the constructor.
+// You would typically instantiate this directly as shown above.
+```
 
 ### Combining Strategies
 
@@ -795,19 +902,19 @@ $exponentialStrategy = new ExponentialBackoffStrategy(
 );
 
 $rateStrategy = new RateLimitStrategy(
-    baseDelay: 1.0,
     innerStrategy: $exponentialStrategy,
     maxAttempts: 50,
     timeWindow: 60
 );
 
 $strategy = new CircuitBreakerStrategy(
-    baseDelay: 1.0,
     innerStrategy: $rateStrategy,
     failureThreshold: 3,
     resetTimeout: 120
 ); 
 ```
+
+> **Note on Wrapper Strategies:** When using wrapper strategies (like CircuitBreaker, RateLimit, TotalTimeout) via aliases or HTTP macros, configuration options like `baseDelay` typically apply to the default inner strategy. When instantiating wrappers directly as shown above, configure the inner strategy explicitly with its own parameters.
 
 ### Exception Handling
 
@@ -994,16 +1101,20 @@ The `RetryContext` object provides comprehensive information about the retry ope
 
 | Property/Method | Description |
 |-----------------|-------------|
-| `operationId` | A unique identifier for this specific retry operation |
-| `metrics` | An array of performance metrics such as `total_duration`, `average_duration`, `min_duration`, `max_duration` |
-| `attemptNumber` | The current attempt number (1-based) |
-| `exceptionHistory` | An array of exceptions caught during previous attempts |
-| `metadata` | Custom data added via `withMetadata()` |
-| `getTotalAttempts()` | The total number of attempts made (including the initial attempt) |
-| `getTotalDelay()` | The total time spent waiting between retry attempts |
-| `getAttemptsRemaining()` | The number of retry attempts still available |
-| `hasAttemptsRemaining()` | Whether there are any retry attempts still available |
-| `shouldRetry(Throwable $e)` | Whether the operation should be retried given the exception |
+| `getOperationId()` | Returns the unique identifier for this specific retry operation |
+| `getMetadata()` | Returns any custom data added via `withMetadata()` |
+| `getMetrics()` | Returns performance metrics including `total_duration`, `average_duration`, `total_delay`, `min_duration`, `max_duration`, and `total_elapsed_time` for monitoring and analytics. Details:
+  * `total_duration`: Sum of execution time for each attempt (excluding delays)
+  * `average_duration`: Average execution time per attempt
+  * `total_delay`: Sum of time spent waiting between retry attempts
+  * `min_duration`/`max_duration`: Minimum/Maximum execution time observed across attempts
+  * `total_elapsed_time`: Total wall-clock time from start to completion |
+| `getExceptionHistory()` | Returns an array of exceptions caught during previous attempts |
+| `getMaxRetries()` | Returns the maximum number of retries configured for this operation |
+| `getStartTime()` | Returns the timestamp when the retry operation started |
+| `getTotalAttempts()` | Returns the total number of attempts made (including the initial attempt) |
+| `getTotalDelay()` | Returns the total time spent waiting between retry attempts |
+| `getSummary()` | Returns a summary array of retry operation statistics |
 
 #### Practical Event Use Cases
 
@@ -1047,31 +1158,34 @@ use Illuminate\Support\Facades\Log;
 Retry::withEventCallbacks([
     'onRetrying' => function ($event) {
         Log::info('Retrying operation', [
-            'operation_id' => $event->context->operationId,
-            'attempt' => $event->context->attemptNumber,
+            'operation_id' => $event->context->getOperationId(),
+            'attempt' => $event->attemptNumber,
             'delay' => $event->delay,
             'error' => $event->exception->getMessage(),
-            'remaining_attempts' => $event->context->getAttemptsRemaining(),
+            'remaining_attempts' => $event->context->getMaxRetries() - $event->attemptNumber + 1,
         ]);
     },
     'onSuccess' => function ($event) {
         Log::info('Operation succeeded', [
-            'operation_id' => $event->context->operationId,
+            'operation_id' => $event->context->getOperationId(),
             'total_attempts' => $event->context->getTotalAttempts(),
-            'total_time' => $event->context->metrics['total_duration'],
+            'total_time' => $event->context->getMetrics()['total_duration'],
             'result' => $event->result,
         ]);
     },
     'onFailure' => function ($event) {
-        Log::error('Operation failed permanently', [
-            'operation_id' => $event->context->operationId,
+        Log::error('Retry operation failed', [
+            'operation_id' => $event->context->getOperationId(),
             'total_attempts' => $event->context->getTotalAttempts(),
-            'total_time' => $event->context->metrics['total_duration'],
-            'error' => $event->exception->getMessage(),
-            'first_error' => $event->context->exceptionHistory[0]->getMessage(),
-            'history' => collect($event->context->exceptionHistory)
+            'total_duration' => $event->context->getMetrics()['total_duration'],
+            'average_duration' => $event->context->getMetrics()['average_duration'],
+            'total_delay' => $event->context->getTotalDelay(),
+            'exception' => get_class($event->exception),
+            'message' => $event->exception->getMessage(),
+            'exception_history' => collect($event->context->getExceptionHistory())
                 ->map(fn ($e) => ['class' => get_class($e), 'message' => $e->getMessage()])
                 ->toArray(),
+            'metadata' => $event->context->getMetadata(),
         ]);
     }
 ])
@@ -1095,17 +1209,17 @@ class LogFailureListener
         $context = $event->context;
 
         Log::error('Retry operation failed', [
-            'operation_id' => $context->operationId,
+            'operation_id' => $context->getOperationId(),
             'total_attempts' => $context->getTotalAttempts(),
-            'total_duration' => $context->metrics['total_duration'],
-            'average_duration' => $context->metrics['average_duration'],
+            'total_duration' => $context->getMetrics()['total_duration'],
+            'average_duration' => $context->getMetrics()['average_duration'],
             'total_delay' => $context->getTotalDelay(),
             'exception' => get_class($event->exception),
             'message' => $event->exception->getMessage(),
-            'exception_history' => collect($context->exceptionHistory)
+            'exception_history' => collect($context->getExceptionHistory())
                 ->map(fn ($e) => ['class' => get_class($e), 'message' => $e->getMessage()])
                 ->toArray(),
-            'metadata' => $context->metadata,
+            'metadata' => $context->getMetadata(),
         ]);
     }
 }
