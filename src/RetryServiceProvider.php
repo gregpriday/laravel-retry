@@ -4,6 +4,7 @@ namespace GregPriday\LaravelRetry;
 
 use GregPriday\LaravelRetry\Contracts\RetryStrategy;
 use GregPriday\LaravelRetry\Exceptions\ExceptionHandlerManager;
+use GregPriday\LaravelRetry\Factories\StrategyFactory;
 use GregPriday\LaravelRetry\Http\HttpClientServiceProvider;
 use GregPriday\LaravelRetry\Pipeline\RetryablePipeline;
 use GregPriday\LaravelRetry\Strategies\CircuitBreakerStrategy;
@@ -44,8 +45,8 @@ class RetryServiceProvider extends ServiceProvider
             // Get the strategy options from the strategies config section
             $strategyOptions = config("retry.strategies.{$defaultStrategy}", []);
 
-            // Create the strategy instance using the factory
-            $strategy = $this->createStrategyInstance($defaultStrategy, $strategyOptions);
+            // Create the strategy instance using the new static factory
+            $strategy = StrategyFactory::make($defaultStrategy, $strategyOptions);
 
             return new Retry(
                 maxRetries: config('retry.max_retries'),
@@ -63,67 +64,6 @@ class RetryServiceProvider extends ServiceProvider
         // Register the facade accessor
         $this->app->alias(Retry::class, 'retry');
         $this->app->alias(RetryablePipeline::class, 'retryable-pipeline');
-
-        // Register a strategy factory that can be used throughout the application
-        $this->app->singleton('retry.strategy.factory', function (Application $app) {
-            return new class($app)
-            {
-                protected $app;
-
-                public function __construct(Application $app)
-                {
-                    $this->app = $app;
-                }
-
-                /**
-                 * Create a strategy instance with the specified parameters.
-                 *
-                 * @param  string  $strategyIdentifier  The class name or kebab-case alias of the strategy
-                 * @param  array  $options  Options for the strategy constructor
-                 *
-                 * @throws LogicException
-                 */
-                public function create(string $strategyIdentifier, array $options = []): RetryStrategy
-                {
-                    $strategyClass = $strategyIdentifier;
-
-                    // Check if it looks like a kebab-case alias (contains hyphens, lowercase)
-                    if (str_contains($strategyIdentifier, '-') && Str::lower($strategyIdentifier) === $strategyIdentifier) {
-                        // Convert kebab-case alias to class name
-                        $strategyClass = StrategyHelper::aliasToClass($strategyIdentifier);
-
-                        if ($strategyClass === null) {
-                            throw new LogicException("Invalid strategy alias '{$strategyIdentifier}'");
-                        }
-
-                        // If no options were provided and this is an alias, attempt to get defaults from config
-                        if (empty($options)) {
-                            $options = config("retry.strategies.{$strategyIdentifier}", []);
-                        }
-                    } elseif (! class_exists($strategyIdentifier)) {
-                        throw new LogicException("Strategy class '{$strategyIdentifier}' does not exist");
-                    }
-
-                    try {
-                        // Create a reflection class
-                        $reflection = new ReflectionClass($strategyClass);
-
-                        // Ensure we're instantiating a RetryStrategy
-                        if (! $reflection->implementsInterface(RetryStrategy::class)) {
-                            throw new LogicException("'{$strategyClass}' is not a valid RetryStrategy");
-                        }
-
-                        // Create and return the instance with the options
-                        return $this->app->make($strategyClass, $options);
-                    } catch (ReflectionException $e) {
-                        // Fallback to default strategy on error
-                        $this->app->make('log')->error("Failed to instantiate retry strategy '{$strategyClass}': {$e->getMessage()}");
-
-                        return new ExponentialBackoffStrategy;
-                    }
-                }
-            };
-        });
 
         // Register the HTTP client integration
         $this->app->register(HttpClientServiceProvider::class);
@@ -162,11 +102,17 @@ class RetryServiceProvider extends ServiceProvider
                         $innerOptions = array_merge($innerOptions, $settings['inner_config']);
                     }
 
-                    // Create the inner strategy
-                    $innerStrategy = $this->app->make('retry.strategy.factory')->create(
+                    // Create the inner strategy using the new static factory
+                    $innerStrategy = StrategyFactory::make(
                         $innerStrategyAlias,
                         $innerOptions
                     );
+
+                    // Get a logger instance if possible
+                    $logger = null;
+                    if ($this->app->bound('log')) {
+                        $logger = $this->app->make('log');
+                    }
 
                     // Create and return the circuit breaker
                     return new CircuitBreakerStrategy(
@@ -175,7 +121,8 @@ class RetryServiceProvider extends ServiceProvider
                         $settings['reset_timeout'],
                         $settings['cache_key'] ?? ($service ? "circuit_breaker_{$service}" : null),
                         $settings['cache_ttl'],
-                        $settings['fail_open_on_cache_error']
+                        $settings['fail_open_on_cache_error'],
+                        $logger
                     );
                 }
             };
@@ -211,22 +158,7 @@ class RetryServiceProvider extends ServiceProvider
             RetryablePipeline::class,
             'retry',
             'retryable-pipeline',
-            'retry.strategy.factory',
             'retry.circuit_breaker.factory',
         ];
-    }
-
-    /**
-     * Create a strategy instance with the specified parameters.
-     *
-     * @param  string  $strategyIdentifier  The class name or kebab-case alias of the strategy
-     * @param  array  $options  Options for the strategy constructor
-     * @return \GregPriday\LaravelRetry\Contracts\RetryStrategy
-     *
-     * @throws LogicException
-     */
-    protected function createStrategyInstance(string $strategyIdentifier, array $options = [])
-    {
-        return $this->app->make('retry.strategy.factory')->create($strategyIdentifier, $options);
     }
 }

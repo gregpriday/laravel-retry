@@ -5,7 +5,8 @@ namespace GregPriday\LaravelRetry\Strategies;
 use Exception;
 use GregPriday\LaravelRetry\Contracts\RetryStrategy;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Log;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Throwable;
 
 /**
@@ -26,6 +27,11 @@ class CircuitBreakerStrategy implements RetryStrategy
     private const CIRCUIT_HALF_OPEN = 'half-open';
 
     /**
+     * The logger instance.
+     */
+    protected LoggerInterface $logger;
+
+    /**
      * Create a new circuit breaker strategy.
      *
      * @param  RetryStrategy  $innerStrategy  The wrapped retry strategy
@@ -34,6 +40,7 @@ class CircuitBreakerStrategy implements RetryStrategy
      * @param  string|null  $cacheKey  Unique identifier for this circuit breaker instance (should be service-specific)
      * @param  int  $cacheTtl  Cache TTL in minutes (default 1 day)
      * @param  bool  $failOpenOnCacheError  Whether to fail open (block requests) when cache operations fail
+     * @param  LoggerInterface|null  $logger  Logger for circuit breaker events
      */
     public function __construct(
         protected RetryStrategy $innerStrategy,
@@ -41,8 +48,11 @@ class CircuitBreakerStrategy implements RetryStrategy
         protected float $resetTimeout = 60.0,
         protected ?string $cacheKey = null,
         protected int $cacheTtl = 1440,
-        protected bool $failOpenOnCacheError = false
+        protected bool $failOpenOnCacheError = false,
+        ?LoggerInterface $logger = null
     ) {
+        $this->logger = $logger ?? new NullLogger();
+
         // If no cacheKey provided, generate a backtrace-based unique identifier
         if ($this->cacheKey === null) {
             $backtrace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 2);
@@ -52,7 +62,7 @@ class CircuitBreakerStrategy implements RetryStrategy
             $this->cacheKey = md5($file.':'.$line);
 
             // Log a warning about using generated cache keys
-            Log::warning(
+            $this->logger->warning(
                 'Circuit breaker initialized with auto-generated cache key. This may cause unexpected behavior if code structure changes.',
                 ['cacheKey' => $this->cacheKey, 'file' => $file, 'line' => $line]
             );
@@ -145,7 +155,7 @@ class CircuitBreakerStrategy implements RetryStrategy
      */
     private function logCacheFailure(Exception $e): void
     {
-        Log::warning('Circuit breaker cache operation failed: '.$e->getMessage(), [
+        $this->logger->warning('Circuit breaker cache operation failed: '.$e->getMessage(), [
             'cacheKey'         => $this->cacheKey,
             'exception'        => $e,
             'failOpenBehavior' => $this->failOpenOnCacheError ? 'deny retries' : 'allow retries',
@@ -221,7 +231,7 @@ class CircuitBreakerStrategy implements RetryStrategy
             }
         } catch (Exception $e) {
             // Log a warning when atomic increment fails
-            Log::warning('Circuit breaker falling back to non-atomic increment. Cache driver may not support atomic increments.', [
+            $this->logger->warning('Circuit breaker falling back to non-atomic increment. Cache driver may not support atomic increments.', [
                 'cacheKey'  => $this->cacheKey,
                 'exception' => $e->getMessage(),
             ]);

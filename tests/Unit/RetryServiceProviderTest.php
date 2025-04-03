@@ -2,6 +2,7 @@
 
 namespace GregPriday\LaravelRetry\Tests\Unit;
 
+use GregPriday\LaravelRetry\Factories\StrategyFactory;
 use GregPriday\LaravelRetry\Retry;
 use GregPriday\LaravelRetry\Strategies\CircuitBreakerStrategy;
 use GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy;
@@ -14,11 +15,6 @@ use ReflectionClass;
 class RetryServiceProviderTest extends TestCase
 {
     /**
-     * @var mixed Strategy factory from the container
-     */
-    protected $strategyFactory;
-
-    /**
      * @var mixed Circuit breaker factory from the container
      */
     protected $circuitBreakerFactory;
@@ -27,7 +23,6 @@ class RetryServiceProviderTest extends TestCase
     {
         parent::setUp();
 
-        $this->strategyFactory = $this->app->make('retry.strategy.factory');
         $this->circuitBreakerFactory = $this->app->make('retry.circuit_breaker.factory');
     }
 
@@ -38,7 +33,7 @@ class RetryServiceProviderTest extends TestCase
      */
     public function test_create_strategy_from_alias(string $alias, string $expectedClass): void
     {
-        $strategy = $this->strategyFactory->create($alias);
+        $strategy = StrategyFactory::make($alias);
         $this->assertInstanceOf($expectedClass, $strategy);
     }
 
@@ -47,7 +42,7 @@ class RetryServiceProviderTest extends TestCase
      */
     public function test_create_strategy_from_class_name(): void
     {
-        $strategy = $this->strategyFactory->create(FixedDelayStrategy::class);
+        $strategy = StrategyFactory::make(FixedDelayStrategy::class);
         $this->assertInstanceOf(FixedDelayStrategy::class, $strategy);
     }
 
@@ -58,7 +53,7 @@ class RetryServiceProviderTest extends TestCase
     {
         config(['retry.strategies.exponential-backoff.baseDelay' => 99.9]);
 
-        $strategy = $this->strategyFactory->create('exponential-backoff');
+        $strategy = StrategyFactory::make('exponential-backoff');
 
         $this->assertInstanceOf(ExponentialBackoffStrategy::class, $strategy);
 
@@ -78,7 +73,7 @@ class RetryServiceProviderTest extends TestCase
         config(['retry.strategies.fixed-delay.baseDelay' => 5.0]);
 
         // Provide custom option
-        $strategy = $this->strategyFactory->create('fixed-delay', ['baseDelay' => 10.0]);
+        $strategy = StrategyFactory::make('fixed-delay', ['baseDelay' => 10.0]);
 
         // Check that the provided option was used
         $reflection = new ReflectionClass($strategy);
@@ -95,7 +90,7 @@ class RetryServiceProviderTest extends TestCase
         $this->expectException(LogicException::class);
         $this->expectExceptionMessage("Invalid strategy alias 'non-existent-alias'");
 
-        $this->strategyFactory->create('non-existent-alias');
+        StrategyFactory::make('non-existent-alias');
     }
 
     /**
@@ -106,7 +101,7 @@ class RetryServiceProviderTest extends TestCase
         $this->expectException(LogicException::class);
         $this->expectExceptionMessage("Strategy class 'NonExistentClass' does not exist");
 
-        $this->strategyFactory->create('NonExistentClass');
+        StrategyFactory::make('NonExistentClass');
     }
 
     /**
@@ -166,7 +161,7 @@ class RetryServiceProviderTest extends TestCase
         // we can be confident the factory is working properly.
 
         // Also test the strategy factory directly for comparison
-        $directStrategy = $this->strategyFactory->create('linear-backoff', [
+        $directStrategy = StrategyFactory::make('linear-backoff', [
             'baseDelay' => 2.5,
             'increment' => 1.5,
         ]);
