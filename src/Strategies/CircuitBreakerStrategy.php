@@ -2,7 +2,10 @@
 
 namespace GregPriday\LaravelRetry\Strategies;
 
+use Exception;
 use GregPriday\LaravelRetry\Contracts\RetryStrategy;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -16,17 +19,11 @@ use Throwable;
  */
 class CircuitBreakerStrategy implements RetryStrategy
 {
-    private const string CIRCUIT_OPEN = 'open';
+    private const CIRCUIT_OPEN = 'open';
 
-    private const string CIRCUIT_CLOSED = 'closed';
+    private const CIRCUIT_CLOSED = 'closed';
 
-    private const string CIRCUIT_HALF_OPEN = 'half-open';
-
-    private string $state = self::CIRCUIT_CLOSED;
-
-    private int $failureCount = 0;
-
-    private ?int $openedAt = null;
+    private const CIRCUIT_HALF_OPEN = 'half-open';
 
     /**
      * Create a new circuit breaker strategy.
@@ -34,12 +31,30 @@ class CircuitBreakerStrategy implements RetryStrategy
      * @param  RetryStrategy  $innerStrategy  The wrapped retry strategy
      * @param  int  $failureThreshold  Number of failures before opening circuit
      * @param  float  $resetTimeout  Seconds before attempting reset (half-open)
+     * @param  string|null  $cacheKey  Unique identifier for this circuit breaker instance (should be service-specific)
+     * @param  int  $cacheTtl  Cache TTL in minutes (default 1 day)
      */
     public function __construct(
         protected RetryStrategy $innerStrategy,
         protected int $failureThreshold = 5,
-        protected float $resetTimeout = 60.0
-    ) {}
+        protected float $resetTimeout = 60.0,
+        protected ?string $cacheKey = null,
+        protected int $cacheTtl = 1440
+    ) {
+        // If no cacheKey provided, generate a backtrace-based unique identifier
+        if ($this->cacheKey === null) {
+            $backtrace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 2);
+            $caller = $backtrace[1] ?? $backtrace[0] ?? null;
+            $file = $caller['file'] ?? 'unknown';
+            $line = $caller['line'] ?? 'unknown';
+            $this->cacheKey = md5($file.':'.$line);
+        }
+
+        // Initialize circuit state in cache if it doesn't exist
+        if (! $this->getCachedState()) {
+            $this->closeCircuit();
+        }
+    }
 
     /**
      * Calculate the delay for the next retry attempt.
@@ -63,32 +78,48 @@ class CircuitBreakerStrategy implements RetryStrategy
      */
     public function shouldRetry(int $attempt, int $maxAttempts, ?Throwable $lastException = null): bool
     {
-        // 1. Process the outcome of the *previous* attempt to update the state.
-        // This handles transitions like CLOSED -> OPEN, HALF_OPEN -> CLOSED, HALF_OPEN -> OPEN.
-        $this->updateStateBasedOnLastOutcome($lastException);
+        try {
+            // 1. Process the outcome of the *previous* attempt to update the state.
+            // This handles transitions like CLOSED -> OPEN, HALF_OPEN -> CLOSED, HALF_OPEN -> OPEN.
+            $this->updateStateBasedOnLastOutcome($lastException);
 
-        // 2. Check if we should transition from OPEN to HALF_OPEN *now* based on time.
-        if ($this->state === self::CIRCUIT_OPEN && $this->shouldAttemptReset()) {
-            // Timeout has passed, transition to half-open *before* making the decision
-            // for the current attempt.
-            $this->state = self::CIRCUIT_HALF_OPEN;
-            $this->resetFailureCount(); // Reset for the single test attempt
-            // Note: openedAt remains set until the circuit closes successfully,
-            // indicating when the last OPEN period started.
+            // 2. Check if we should transition from OPEN to HALF_OPEN *now* based on time.
+            $state = $this->getCachedState();
+            $openedAt = $this->getCachedOpenedAt();
+
+            if ($state === self::CIRCUIT_OPEN && $this->shouldAttemptReset($openedAt)) {
+                // Timeout has passed, transition to half-open *before* making the decision
+                // for the current attempt.
+                $this->setCachedState(self::CIRCUIT_HALF_OPEN);
+                $this->resetFailureCount(); // Reset for the single test attempt
+                // Note: openedAt remains set until the circuit closes successfully,
+                // indicating when the last OPEN period started.
+            }
+
+            // 3. Make the retry decision based on the *current* (potentially updated) state.
+            $state = $this->getCachedState(); // Refresh state
+            if ($state === self::CIRCUIT_OPEN) {
+                // Still open (timeout hasn't passed or transition didn't happen)
+                // Deny retry immediately.
+                return false;
+            }
+
+            // If state is CLOSED or HALF_OPEN, defer to the inner strategy
+            // (which respects maxAttempts). The HALF_OPEN state allows exactly one
+            // attempt through the inner strategy check. The outcome of this attempt
+            // will be processed by updateStateBasedOnLastOutcome in the *next* call.
+            return $this->innerStrategy->shouldRetry($attempt, $maxAttempts, $lastException);
+        } catch (Exception $e) {
+            // If cache operations fail, log the issue and default to allowing retries
+            // This assumes it's better to potentially overwhelm a system than to
+            // incorrectly prevent retries due to cache failures
+            Log::warning('Circuit breaker cache operation failed: '.$e->getMessage(), [
+                'cacheKey'  => $this->cacheKey,
+                'exception' => $e,
+            ]);
+
+            return $this->innerStrategy->shouldRetry($attempt, $maxAttempts, $lastException);
         }
-
-        // 3. Make the retry decision based on the *current* (potentially updated) state.
-        if ($this->state === self::CIRCUIT_OPEN) {
-            // Still open (timeout hasn't passed or transition didn't happen)
-            // Deny retry immediately.
-            return false;
-        }
-
-        // If state is CLOSED or HALF_OPEN, defer to the inner strategy
-        // (which respects maxAttempts). The HALF_OPEN state allows exactly one
-        // attempt through the inner strategy check. The outcome of this attempt
-        // will be processed by updateStateBasedOnLastOutcome in the *next* call.
-        return $this->innerStrategy->shouldRetry($attempt, $maxAttempts, $lastException);
     }
 
     /**
@@ -97,7 +128,9 @@ class CircuitBreakerStrategy implements RetryStrategy
      */
     private function updateStateBasedOnLastOutcome(?Throwable $lastException): void
     {
-        if ($this->state === self::CIRCUIT_HALF_OPEN) {
+        $state = $this->getCachedState();
+
+        if ($state === self::CIRCUIT_HALF_OPEN) {
             if ($lastException !== null) {
                 // Failure during HALF_OPEN attempt -> Re-open the circuit
                 $this->openCircuit();
@@ -105,16 +138,16 @@ class CircuitBreakerStrategy implements RetryStrategy
                 // Success during HALF_OPEN attempt -> Close the circuit
                 $this->closeCircuit();
             }
-        } elseif ($this->state === self::CIRCUIT_CLOSED) {
+        } elseif ($state === self::CIRCUIT_CLOSED) {
             if ($lastException !== null) {
                 // Failure during CLOSED state
-                $this->failureCount++; // Increment first to reflect this failure
+                // Use atomic increment operation if the driver supports it
+                $this->incrementFailureCount();
 
-                // Check if the failure count *now exceeds* the threshold
-                if ($this->failureCount > $this->failureThreshold) {
+                // Check if the failure count now exceeds the threshold
+                if ($this->getCachedFailureCount() > $this->failureThreshold) {
                     $this->openCircuit(); // Open circuit
                 }
-                // If not met, remain CLOSED, failure count is already updated.
             } else {
                 // Success during CLOSED state
                 $this->resetFailureCount(); // Reset count on success
@@ -126,28 +159,140 @@ class CircuitBreakerStrategy implements RetryStrategy
 
     private function openCircuit(): void
     {
-        $this->state = self::CIRCUIT_OPEN;
-        $this->openedAt = now()->getTimestamp();
+        $this->setCachedState(self::CIRCUIT_OPEN);
+        $this->setCachedOpenedAt(now()->getTimestamp());
         // Failure count becomes irrelevant in OPEN state, will be reset on transition
     }
 
     private function closeCircuit(): void
     {
-        $this->state = self::CIRCUIT_CLOSED;
-        $this->openedAt = null;
+        $this->setCachedState(self::CIRCUIT_CLOSED);
+        $this->setCachedOpenedAt(null);
         $this->resetFailureCount();
     }
 
     private function resetFailureCount(): void
     {
-        $this->failureCount = 0;
+        $this->setCachedFailureCount(0);
     }
 
-    private function shouldAttemptReset(): bool
+    /**
+     * Atomically increment the failure count
+     */
+    private function incrementFailureCount(): void
     {
-        // Use now()->getTimestamp() instead of time()
-        // Ensure openedAt is not null before comparison
-        return $this->openedAt !== null && (now()->getTimestamp() - $this->openedAt) >= $this->resetTimeout;
+        try {
+            // First try atomic increment if the driver supports it
+            $result = Cache::increment($this->getCacheKey('failure_count'));
+
+            // If the key doesn't exist yet, increment returns false
+            if ($result === false) {
+                $this->setCachedFailureCount(1);
+            }
+        } catch (Exception $e) {
+            // Fall back to non-atomic operation if increment fails
+            $count = $this->getCachedFailureCount() + 1;
+            $this->setCachedFailureCount($count);
+        }
+    }
+
+    private function shouldAttemptReset(?int $openedAt): bool
+    {
+        return $openedAt !== null && (now()->getTimestamp() - $openedAt) >= $this->resetTimeout;
+    }
+
+    /**
+     * Generate a fully qualified cache key for the given property
+     */
+    private function getCacheKey(string $property): string
+    {
+        return "circuit_breaker:{$this->cacheKey}:{$property}";
+    }
+
+    /**
+     * Get circuit state from cache
+     */
+    private function getCachedState(): ?string
+    {
+        try {
+            return Cache::tags(['circuit_breakers'])->get($this->getCacheKey('state'));
+        } catch (Exception $e) {
+            // If tagging is not supported by the cache driver, fall back to regular cache
+            return Cache::get($this->getCacheKey('state'));
+        }
+    }
+
+    /**
+     * Set circuit state in cache
+     */
+    private function setCachedState(string $state): void
+    {
+        try {
+            Cache::tags(['circuit_breakers'])->put($this->getCacheKey('state'), $state, $this->cacheTtl);
+        } catch (Exception $e) {
+            // If tagging is not supported by the cache driver, fall back to regular cache
+            Cache::put($this->getCacheKey('state'), $state, $this->cacheTtl);
+        }
+    }
+
+    /**
+     * Get failure count from cache
+     */
+    private function getCachedFailureCount(): int
+    {
+        try {
+            return Cache::tags(['circuit_breakers'])->get($this->getCacheKey('failure_count'), 0);
+        } catch (Exception $e) {
+            // If tagging is not supported by the cache driver, fall back to regular cache
+            return Cache::get($this->getCacheKey('failure_count'), 0);
+        }
+    }
+
+    /**
+     * Set failure count in cache
+     */
+    private function setCachedFailureCount(int $count): void
+    {
+        try {
+            Cache::tags(['circuit_breakers'])->put($this->getCacheKey('failure_count'), $count, $this->cacheTtl);
+        } catch (Exception $e) {
+            // If tagging is not supported by the cache driver, fall back to regular cache
+            Cache::put($this->getCacheKey('failure_count'), $count, $this->cacheTtl);
+        }
+    }
+
+    /**
+     * Get opened at timestamp from cache
+     */
+    private function getCachedOpenedAt(): ?int
+    {
+        try {
+            return Cache::tags(['circuit_breakers'])->get($this->getCacheKey('opened_at'));
+        } catch (Exception $e) {
+            // If tagging is not supported by the cache driver, fall back to regular cache
+            return Cache::get($this->getCacheKey('opened_at'));
+        }
+    }
+
+    /**
+     * Set opened at timestamp in cache
+     */
+    private function setCachedOpenedAt(?int $timestamp): void
+    {
+        try {
+            if ($timestamp === null) {
+                Cache::tags(['circuit_breakers'])->forget($this->getCacheKey('opened_at'));
+            } else {
+                Cache::tags(['circuit_breakers'])->put($this->getCacheKey('opened_at'), $timestamp, $this->cacheTtl);
+            }
+        } catch (Exception $e) {
+            // If tagging is not supported by the cache driver, fall back to regular cache
+            if ($timestamp === null) {
+                Cache::forget($this->getCacheKey('opened_at'));
+            } else {
+                Cache::put($this->getCacheKey('opened_at'), $timestamp, $this->cacheTtl);
+            }
+        }
     }
 
     /**
@@ -155,7 +300,7 @@ class CircuitBreakerStrategy implements RetryStrategy
      */
     public function getCircuitState(): string
     {
-        return $this->state;
+        return $this->getCachedState() ?? self::CIRCUIT_CLOSED;
     }
 
     /**
@@ -163,7 +308,7 @@ class CircuitBreakerStrategy implements RetryStrategy
      */
     public function getFailureCount(): int
     {
-        return $this->failureCount;
+        return $this->getCachedFailureCount();
     }
 
     /**
@@ -172,5 +317,14 @@ class CircuitBreakerStrategy implements RetryStrategy
     public function getResetTimeout(): float
     {
         return $this->resetTimeout;
+    }
+
+    /**
+     * Reset the circuit breaker state completely.
+     * Useful for testing or administrative operations.
+     */
+    public function reset(): void
+    {
+        $this->closeCircuit();
     }
 }
