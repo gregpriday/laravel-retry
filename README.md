@@ -116,9 +116,22 @@ After publishing, you can customize the package's behavior in `config/retry.php`
 * **`max_retries`** (Env: `RETRY_MAX_ATTEMPTS`): Maximum number of times an operation will be retried after the initial attempt fails (Default: `3`).
 * **`timeout`** (Env: `RETRY_TIMEOUT`): Maximum execution time per attempt in seconds (Default: `120`).
 * **`total_timeout`** (Env: `RETRY_TOTAL_TIMEOUT`): Maximum total time allowed for the entire operation, including all retries and delays (Default: `300`).
-* **`default_strategy`**: Configures the default retry logic applied when no specific strategy is chosen:
-  * **`class`** (Env: `RETRY_DEFAULT_STRATEGY`): The class name of the default strategy (Default: `ExponentialBackoffStrategy`).
-  * **`options.baseDelay`**: The initial delay in seconds before the first retry (Default: `1.0`). See [Understanding Delay Configuration](#understanding-delay-configuration) for details.
+* **`default`** (Env: `RETRY_STRATEGY`): The kebab-case alias of the default retry strategy (Default: `exponential-backoff`).
+  * Settings for each strategy are defined in the `strategies` section of the config file.
+
+Available built-in strategy aliases:
+  * `exponential-backoff`: Increases delay exponentially with each retry (Default)
+  * `linear-backoff`: Increases delay by a fixed amount with each retry
+  * `fixed-delay`: Uses the same delay for all retries
+  * `fibonacci-backoff`: Increases delay according to the Fibonacci sequence
+  * `decorrelated-jitter`: Uses AWS-style decorrelated jitter algorithm
+  * `circuit-breaker`: Stops retrying after a threshold of failures
+  * `rate-limit`: Controls retry frequency with Laravel's Rate Limiter
+  * `total-timeout`: Enforces a maximum total time across all retry attempts
+  * `guzzle-response`: Intelligently handles HTTP retries based on response headers
+  * `response-content`: Inspects HTTP response bodies for error conditions
+  * `custom-options`: Allows for flexible, customized retry behavior
+
 * **`dispatch_events`** (Env: `RETRY_DISPATCH_EVENTS`): Enables/disables Laravel events during the retry lifecycle for monitoring (Default: `true`).
 * **`handler_paths`**: Directories containing custom `RetryableExceptionHandler` classes for automatic discovery.
 
@@ -524,20 +537,20 @@ Laravel Retry comes with a comprehensive set of retry strategies to handle diffe
 
 #### Strategy Overview
 
-| Strategy | Primary Use Case |
-|----------|------------------|
-| **ExponentialBackoffStrategy** | Handles general temporary failures by exponentially increasing the delay between retries. |
-| **LinearBackoffStrategy** | Provides a predictable retry delay that increases by a fixed amount with each attempt. |
-| **FibonacciBackoffStrategy** | Offers a balanced retry delay growth based on the Fibonacci sequence, suitable for various scenarios. |
-| **FixedDelayStrategy** | Applies a consistent, fixed delay between every retry attempt, ideal for predictable recovery times. |
-| **DecorrelatedJitterStrategy** | Prevents retry collisions ("thundering herd") in high-traffic scenarios using AWS-style decorrelated jitter. |
-| **GuzzleResponseStrategy** | Intelligently retries HTTP requests based on standard response headers like `Retry-After` or `X-RateLimit-Reset`. |
-| **ResponseContentStrategy** | Triggers retries by inspecting response content (like JSON error codes or text patterns) even when the HTTP status is successful. |
-| **CircuitBreakerStrategy** | Prevents overwhelming a failing service by temporarily halting requests after repeated failures (Circuit Breaker pattern). |
-| **RateLimitStrategy** | Controls retry frequency to respect API rate limits or manage load on internal services using Laravel's Rate Limiter. |
-| **TotalTimeoutStrategy** | Ensures the entire retry operation (including delays) completes within a specific total time limit. |
-| **CustomOptionsStrategy** | Allows customizing an existing strategy's behavior with specific options and callbacks for one-off adjustments. |
-| **CallbackRetryStrategy** | Enables completely custom retry logic by defining both the delay calculation and the retry decision via callbacks. |
+| Strategy | Alias | Primary Use Case |
+|----------|-------|------------------|
+| **ExponentialBackoffStrategy** | `exponential-backoff` | Handles general temporary failures by exponentially increasing the delay between retries. |
+| **LinearBackoffStrategy** | `linear-backoff` | Provides a predictable retry delay that increases by a fixed amount with each attempt. |
+| **FibonacciBackoffStrategy** | `fibonacci-backoff` | Offers a balanced retry delay growth based on the Fibonacci sequence, suitable for various scenarios. |
+| **FixedDelayStrategy** | `fixed-delay` | Applies a consistent, fixed delay between every retry attempt, ideal for predictable recovery times. |
+| **DecorrelatedJitterStrategy** | `decorrelated-jitter` | Prevents retry collisions ("thundering herd") in high-traffic scenarios using AWS-style decorrelated jitter. |
+| **GuzzleResponseStrategy** | `guzzle-response` | Intelligently retries HTTP requests based on standard response headers like `Retry-After` or `X-RateLimit-Reset`. |
+| **ResponseContentStrategy** | `response-content` | Triggers retries by inspecting response content (like JSON error codes or text patterns) even when the HTTP status is successful. |
+| **CircuitBreakerStrategy** | `circuit-breaker` | Prevents overwhelming a failing service by temporarily halting requests after repeated failures (Circuit Breaker pattern). |
+| **RateLimitStrategy** | `rate-limit` | Controls retry frequency to respect API rate limits or manage load on internal services using Laravel's Rate Limiter. |
+| **TotalTimeoutStrategy** | `total-timeout` | Ensures the entire retry operation (including delays) completes within a specific total time limit. |
+| **CustomOptionsStrategy** | `custom-options` | Allows customizing an existing strategy's behavior with specific options and callbacks for one-off adjustments. |
+| **CallbackRetryStrategy** | `callback-retry` | Enables completely custom retry logic by defining both the delay calculation and the retry decision via callbacks. |
 
 ```php
 use GregPriday\LaravelRetry\Facades\Retry;
@@ -551,10 +564,11 @@ Retry::withStrategy(new ExponentialBackoffStrategy())
 
 Available strategies:
 
-#### 1. ExponentialBackoffStrategy (Default)
+#### 1. ExponentialBackoffStrategy (Alias: `exponential-backoff`)
 Increases delay exponentially with each attempt. Best for general-purpose retries and temporary networking or service issues where increasing wait times helps recovery.
 
 ```php
+// Using the class directly
 use GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy;
 
 $strategy = new ExponentialBackoffStrategy(
@@ -564,12 +578,22 @@ $strategy = new ExponentialBackoffStrategy(
     withJitter: true,     // Add randomness to prevent thundering herd
     jitterPercent: 0.2    // Percentage of jitter (0.2 means ±20%)
 );
+
+// Using the factory with options
+$strategy = app('retry.strategy.factory')->create('exponential-backoff', [
+    'baseDelay' => 1.0,
+    'multiplier' => 2.0,
+    'maxDelay' => 60,
+    'withJitter' => true,
+    'jitterPercent' => 0.2
+]);
 ```
 
-#### 2. LinearBackoffStrategy
+#### 2. LinearBackoffStrategy (Alias: `linear-backoff`)
 Increases delay by a fixed amount with each attempt. Useful when a more predictable increase in wait time is desired compared to exponential backoff.
 
 ```php
+// Using the class directly
 use GregPriday\LaravelRetry\Strategies\LinearBackoffStrategy;
 
 $strategy = new LinearBackoffStrategy(
@@ -577,12 +601,20 @@ $strategy = new LinearBackoffStrategy(
     increment: 5,      // Add 5 seconds each retry
     maxDelay: 30       // Cap at 30 seconds
 );
+
+// Using the factory with options
+$strategy = app('retry.strategy.factory')->create('linear-backoff', [
+    'baseDelay' => 1.0,
+    'increment' => 5,
+    'maxDelay' => 30
+]);
 ```
 
-#### 3. FibonacciBackoffStrategy
+#### 3. FibonacciBackoffStrategy (Alias: `fibonacci-backoff`)
 Increases delay according to the Fibonacci sequence. Good balance between aggressive and conservative retries, growing slower than exponential but faster than linear initially.
 
 ```php
+// Using the class directly
 use GregPriday\LaravelRetry\Strategies\FibonacciBackoffStrategy;
 
 $strategy = new FibonacciBackoffStrategy(
@@ -591,6 +623,14 @@ $strategy = new FibonacciBackoffStrategy(
     withJitter: true,    // Add randomness to prevent thundering herd
     jitterPercent: 0.2   // Percentage of jitter (0.2 means ±20%)
 );
+
+// Using the factory with options
+$strategy = app('retry.strategy.factory')->create('fibonacci-backoff', [
+    'baseDelay' => 1.0,
+    'maxDelay' => 60,
+    'withJitter' => true,
+    'jitterPercent' => 0.2
+]);
 ```
 
 #### 4. FixedDelayStrategy

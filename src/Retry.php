@@ -9,6 +9,7 @@ use GregPriday\LaravelRetry\Events\OperationSucceededEvent;
 use GregPriday\LaravelRetry\Events\RetryingOperationEvent;
 use GregPriday\LaravelRetry\Exceptions\ExceptionHandlerManager;
 use GregPriday\LaravelRetry\Strategies\ExponentialBackoffStrategy;
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Event;
 use RuntimeException;
 use Throwable;
@@ -121,6 +122,26 @@ class Retry
     public function withStrategy(RetryStrategy $strategy): self
     {
         $this->strategy = $strategy;
+
+        return $this;
+    }
+
+    /**
+     * Set the retry strategy to use a circuit breaker.
+     *
+     * @param  string|null  $service  The named service from the configuration, or null for default
+     * @return $this
+     */
+    public function withCircuitBreaker(?string $service = null): self
+    {
+        // Resolve the circuit breaker factory from the container
+        $factory = App::make('retry.circuit_breaker.factory');
+
+        // Create a circuit breaker for the given service (or default if null)
+        $circuitBreaker = $factory->create($service);
+
+        // Set the circuit breaker as the strategy
+        $this->strategy = $circuitBreaker;
 
         return $this;
     }
