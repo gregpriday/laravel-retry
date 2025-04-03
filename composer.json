@@ -32,10 +32,7 @@
   "scripts": {
     "test": "phpunit",
     "format": "pint",
-    "format:test": "pint --test",
-    "post-autoload-dump": [
-      "vendor/bin/captainhook install -f -s"
-    ]
+    "format:test": "pint --test"
   },
   "extra": {
     "laravel": {
@@ -51,7 +48,6 @@
   "prefer-stable": true,
   "config": {
     "allow-plugins": {
-      "captainhook/hook-installer": true
     }
   }
 }
